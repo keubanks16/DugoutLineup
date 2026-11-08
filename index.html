@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dugout Clipboard</title>
+<style>
+:root{
+  --bg:#0b0f14;--card:#151b23;--card2:#1d2530;--line:#2a3441;--text:#f2f5f8;--dim:#8d9aab;
+  --accent:#ffc83d;--good:#35d07f;--warn:#ffb020;--bad:#ff5a5a;--blue:#4da3ff;
+}
+body.light{
+  --bg:#ffffff;--card:#f1f3f6;--card2:#e3e7ec;--line:#c9d0d9;--text:#05070a;--dim:#4b5563;
+  --accent:#b07800;--good:#0a8a4a;--warn:#b86e00;--bad:#c81e1e;--blue:#0057c2;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(84px + env(safe-area-inset-bottom)) env(safe-area-inset-left);user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulation}
+input,select{font:inherit;color:var(--text);background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:52px;width:100%;user-select:text;-webkit-user-select:text}
+
+/* Scoreboard */
+.board{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 10px 8px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+.inn{display:flex;align-items:center;gap:4px}
+.inn button{background:var(--card2);border-radius:12px;min-width:38px;height:52px;font-size:20px;font-weight:700}
+.inn .num{min-width:46px;text-align:center;line-height:1}
+.inn .num b{font-size:28px;display:block}
+.inn .num small{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+.outs{min-width:0;display:flex;justify-content:center;gap:6px;align-items:center;background:var(--card);border-radius:12px;height:52px}
+.outs span{font-size:10px;color:var(--dim);letter-spacing:1px;margin-right:2px}
+.dot{width:18px;height:18px;flex:0 0 auto;border-radius:50%;border:2px solid var(--dim)}
+.dot.on{background:var(--bad);border-color:var(--bad)}
+.score{display:flex;gap:4px}
+.sc{background:var(--card);border-radius:12px;text-align:center;min-width:50px;height:52px;display:flex;flex-direction:column;justify-content:center}
+.sc small{font-size:10px;color:var(--dim);letter-spacing:1px}
+.sc b{font-size:24px;line-height:1}
+
+main{padding:12px}
+.card{background:var(--card);border-radius:18px;padding:14px;margin-bottom:12px}
+.lbl{font-size:12px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.big-name{font-size:34px;font-weight:800;line-height:1.1;margin:2px 0 10px}
+.big-name .n{color:var(--accent);margin-right:8px}
+.queue{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.queue div{background:var(--card2);border-radius:12px;padding:10px;font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue small{display:block;font-size:11px;color:var(--dim);font-weight:700;letter-spacing:1px}
+.row{display:flex;gap:10px}
+.btn{background:var(--card2);border-radius:14px;min-height:64px;padding:0 16px;font-size:19px;font-weight:700;flex:1}
+.btn.primary{background:var(--accent);color:#111}
+.btn.sm{min-height:48px;font-size:16px;flex:0 0 auto}
+.btn.danger{background:transparent;border:2px solid var(--bad);color:var(--bad)}
+.pitch-wrap{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.count{font-size:72px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.meter{height:12px;background:var(--card2);border-radius:6px;overflow:hidden;margin:8px 0 6px}
+.meter i{display:block;height:100%;border-radius:6px}
+.pmeta{font-size:15px;color:var(--dim)}
+.plus{display:block;width:120px;height:128px;border-radius:24px;background:var(--good);color:#04130a;font-size:34px;font-weight:900}
+.minus{display:block;margin-top:8px;width:120px;height:48px;border-radius:14px;background:var(--card2);font-size:18px;font-weight:700}
+.link{background:none;color:var(--blue);font-weight:700;font-size:15px;padding:6px 0}
+.chips{display:flex;flex-direction:column;gap:8px}
+.chip{display:flex;align-items:center;gap:8px;background:var(--card2);border-radius:14px;padding:8px 8px 8px 14px}
+.chip .nm{flex:1;font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .tm{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--warn);min-width:62px;text-align:right}
+.chip button{min-height:48px;border-radius:12px;padding:0 12px;font-weight:700;background:var(--card);font-size:15px}
+.chip button.go{background:var(--good);color:#04130a}
+.empty{color:var(--dim);font-size:16px;padding:6px 0 10px}
+
+/* Field */
+.posgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pos{background:var(--card2);border-radius:14px;min-height:72px;padding:8px;text-align:left;display:flex;flex-direction:column;justify-content:center}
+.pos small{font-size:13px;color:var(--accent);font-weight:800}
+.pos span{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pos.open span{color:var(--dim);font-weight:500}
+.mini{display:flex;flex-wrap:wrap;gap:6px}
+.mini span{background:var(--card2);border-radius:10px;padding:6px 9px;font-size:14px;font-weight:600}
+.mini span b{color:var(--accent);margin-right:4px}
+table{width:100%;border-collapse:collapse;font-size:15px}
+td,th{padding:10px 6px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:11px;color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+td.c,th.c{text-align:center}
+tr.hot td{color:var(--warn);font-weight:700}
+
+/* Lists */
+.li{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.li:last-child{border-bottom:0}
+.li .o{width:34px;text-align:center;font-weight:800;color:var(--dim);font-size:18px}
+.li .nm{flex:1;font-size:19px;font-weight:700;padding:10px 0;text-align:left;background:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li.cur{background:color-mix(in srgb,var(--accent) 14%,transparent);border-radius:12px}
+.li.cur .o{color:var(--accent)}
+.ib{width:52px;height:52px;border-radius:12px;background:var(--card2);font-size:20px;font-weight:800;flex:0 0 auto}
+.seg{display:flex;background:var(--card2);border-radius:14px;padding:4px;gap:4px}
+.seg button{flex:1;min-height:48px;border-radius:10px;font-weight:700;background:none}
+.seg button.on{background:var(--accent);color:#111}
+.field2{display:grid;grid-template-columns:90px 1fr;gap:8px;margin-bottom:8px}
+
+/* Tabs */
+nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--card);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+nav button{background:none;min-height:62px;border-radius:12px;font-size:13px;font-weight:700;color:var(--dim);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+nav button i{font-style:normal;font-size:24px}
+nav button.on{color:var(--accent);background:var(--card2)}
+
+/* Sheet */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10;display:flex;align-items:flex-end}
+.sheet{background:var(--card);width:100%;max-height:80vh;overflow:auto;border-radius:22px 22px 0 0;padding:16px 14px calc(16px + env(safe-area-inset-bottom))}
+.sheet h3{margin:4px 4px 12px;font-size:20px}
+.sheet .opt{display:block;width:100%;text-align:left;background:var(--card2);border-radius:14px;min-height:60px;padding:0 16px;font-size:19px;font-weight:700;margin-bottom:8px}
+.sheet .opt small{color:var(--dim);font-weight:600;margin-left:6px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-weight:700;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="board" id="board"></div>
+<main id="main"></main>
+<nav id="nav"></nav>
+<div class="toast" id="toast"></div>
+<div id="sheet"></div>
+
+<script>
+const KEY='dugout-clipboard-v1';
+const POS3=['P','C','1B','2B','3B','SS','LF','CF','RF'];
+const POS4=['P','C','1B','2B','3B','SS','LF','LC','RC','RF'];
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function defaults(){
+  const roster=Array.from({length:10},(_,i)=>({id:uid(),name:'Player '+(i+1),num:String(i+1)}));
+  return {team:'My Team',age:8,of:4,roster,order:roster.map(p=>p.id),batIdx:0,
+    inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},
+    fieldInning:1,light:false,tab:'game'};
+}
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.roster)S=defaults();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+const P=id=>S.roster.find(p=>p.id===id);
+const nm=id=>{const p=P(id);return p?p.name:'—'};
+const tag=id=>{const p=P(id);return p?((p.num?'#'+esc(p.num)+' ':'')+esc(p.name)):'—'};
+const positions=()=>S.of===4?POS4:POS3;
+const limit=()=>S.age<=8?50:S.age<=10?75:S.age<=12?85:S.age<=16?95:105;
+function rest(n){const t=S.age<=14?[20,35,50,65]:[30,45,60,75];return t.filter(x=>n>x).length}
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),1600)}
+function buzz(){try{navigator.vibrate&&navigator.vibrate(15)}catch(e){}}
+
+/* ---------- Sheet (picker / confirm) ---------- */
+let sheetCb=null;
+function pick(title,opts,cb){
+  sheetCb=cb;
+  document.getElementById('sheet').innerHTML=`<div class="ov" data-act="closeSheet"><div class="sheet">
+    <h3>${esc(title)}</h3>
+    ${opts.map((o,i)=>`<button class="opt" data-act="sheetPick" data-i="${i}" ${o.style?`style="${o.style}"`:''}>${o.html}</button>`).join('')}
+    <button class="opt" data-act="closeSheet" style="text-align:center;color:var(--dim)">Cancel</button>
+  </div></div>`;
+  pick._opts=opts;
+}
+function closeSheet(){document.getElementById('sheet').innerHTML='';sheetCb=null}
+function confirmBox(title,yes,cb){pick(title,[{html:yes,style:'background:var(--bad);color:#fff;text-align:center',v:true}],cb)}
+function playerOpts(extra){
+  return (extra||[]).concat(S.roster.map(p=>({html:tag(p.id),v:p.id})));
+}
+
+/* ---------- Render ---------- */
+function render(){
+  document.body.classList.toggle('light',!!S.light);
+  renderBoard();
+  const m=document.getElementById('main');
+  m.innerHTML={game:vGame,lineup:vLineup,field:vField,setup:vSetup}[S.tab]();
+  const tabs=[['game','⚾','Game'],['lineup','📋','Lineup'],['field','🧢','Field'],['setup','⚙️','Setup']];
+  document.getElementById('nav').innerHTML=tabs.map(t=>`<button class="${S.tab===t[0]?'on':''}" data-act="tab" data-v="${t[0]}"><i>${t[1]}</i>${t[2]}</button>`).join('');
+  tick();
+}
+function renderBoard(){
+  document.getElementById('board').innerHTML=`
+  <div class="inn">
+    <button data-act="halfPrev" aria-label="Previous half inning">‹</button>
+    <div class="num"><b>${S.half==='top'?'▲':'▼'}${S.inning}</b><small>${S.half==='top'?'Top':'Bot'}</small></div>
+    <button data-act="halfNext" aria-label="Next half inning">›</button>
+  </div>
+  <button class="outs" data-act="out" aria-label="Add out"><span>OUTS</span>${[0,1,2].map(i=>`<i class="dot ${i<S.outs?'on':''}"></i>`).join('')}</button>
+  <div class="score">
+    <button class="sc" data-act="score" data-v="us"><small>US</small><b>${S.us}</b></button>
+    <button class="sc" data-act="score" data-v="them"><small>THEM</small><b>${S.them}</b></button>
+  </div>`;
+}
+
+function vGame(){
+  const o=S.order, n=o.length;
+  let bat='';
+  if(!n){bat=`<div class="empty">No batting order yet.</div><button class="btn" data-act="tab" data-v="lineup">Set lineup</button>`}
+  else{
+    const i=((S.batIdx%n)+n)%n, a=o[i], b=o[(i+1)%n], c=o[(i+2)%n], p=P(a);
+    bat=`<div class="big-name">${p&&p.num?`<span class="n">#${esc(p.num)}</span>`:''}${esc(nm(a))}</div>
+    <div class="queue"><div><small>ON DECK</small>${tag(b)}</div><div><small>IN THE HOLE</small>${tag(c)}</div></div>
+    <div class="row"><button class="btn sm" data-act="bat" data-v="-1" style="min-width:84px">‹ Back</button><button class="btn primary" data-act="bat" data-v="1">Next batter ›</button></div>`;
+  }
+  // Pitcher
+  let pit;
+  if(!S.pitcher){pit=`<div class="empty">No pitcher selected.</div><button class="btn" data-act="choosePitcher">Choose pitcher</button>`}
+  else{
+    const c=S.pitches[S.pitcher]||0, L=limit(), pct=Math.min(100,c/L*100);
+    const col=pct>=100?'var(--bad)':pct>=80?'var(--warn)':'var(--good)';
+    const r=rest(c);
+    pit=`<div class="pitch-wrap"><div>
+      <button class="link" data-act="choosePitcher" style="font-size:20px;color:var(--text)">${tag(S.pitcher)} ▾</button>
+      <div class="count" style="color:${col}">${c}</div>
+      <div class="meter"><i style="width:${pct}%;background:${col}"></i></div>
+      <div class="pmeta">Limit ${L} (age ${S.age}) · ${pct>=100?'<b style="color:var(--bad)">AT LIMIT</b>':(L-c)+' left'}<br>Rest if pulled now: <b style="color:var(--text)">${r} day${r===1?'':'s'}</b></div>
+    </div><div>
+      <button class="plus" data-act="pitch" data-v="1">+1</button>
+      <button class="minus" data-act="pitch" data-v="-1">−1 undo</button>
+    </div></div>`;
+  }
+  // Bullpen
+  const pen=S.pen.length?`<div class="chips">${S.pen.map(w=>`<div class="chip"><div class="nm">${tag(w.id)}</div><div class="tm" data-start="${w.start}">0:00</div><button class="go" data-act="penIn" data-v="${w.id}">Put in</button><button data-act="penOut" data-v="${w.id}" aria-label="Stop warming">✕</button></div>`).join('')}</div>`:`<div class="empty">Nobody warming up.</div>`;
+  // Field now
+  const f=S.field[S.inning]||{};
+  const fieldNow=positions().map(ps=>`<span><b>${ps}</b>${f[ps]?esc(nm(f[ps])):'—'}</span>`).join('');
+  return `
+  <div class="card"><div class="lbl">Now batting <span>${n?((((S.batIdx%n)+n)%n)+1)+' of '+n:''}</span></div>${bat}</div>
+  <div class="card"><div class="lbl">Pitcher</div>${pit}</div>
+  <div class="card"><div class="lbl">Warming up <button class="link" data-act="penAdd">+ Add</button></div>${pen}</div>
+  <div class="card"><div class="lbl">Defense · inning ${S.inning} <button class="link" data-act="goField">Edit</button></div><div class="mini">${fieldNow}</div></div>`;
+}
+
+function vLineup(){
+  const n=S.order.length, cur=n?((S.batIdx%n)+n)%n:-1;
+  const rows=S.order.map((id,i)=>`<div class="li ${i===cur?'cur':''}">
+    <div class="o">${i+1}</div>
+    <button class="nm" data-act="setBat" data-v="${i}">${tag(id)}${i===cur?' <small style="color:var(--accent)">· AT BAT</small>':''}</button>
+    <button class="ib" data-act="mv" data-v="${i}" data-d="-1" aria-label="Move up">▲</button>
+    <button class="ib" data-act="mv" data-v="${i}" data-d="1" aria-label="Move down">▼</button>
+    <button class="ib" data-act="unorder" data-v="${i}" aria-label="Remove from order" style="color:var(--bad)">✕</button>
+  </div>`).join('');
+  const out=S.roster.filter(p=>!S.order.includes(p.id));
+  return `<div class="card"><div class="lbl">Batting order <span>Tap a name to set who's up</span></div>${rows||'<div class="empty">Empty — add players below.</div>'}</div>
+  ${out.length?`<div class="card"><div class="lbl">Not in order</div>${out.map(p=>`<div class="li"><div class="nm">${tag(p.id)}</div><button class="btn sm" data-act="order" data-v="${p.id}">+ Add</button></div>`).join('')}</div>`:''}`;
+}
+
+function vField(){
+  const inn=S.fieldInning, f=S.field[inn]||{}, ps=positions();
+  const used=Object.values(f);
+  const bench=S.roster.filter(p=>!used.includes(p.id));
+  const grid=ps.map(x=>`<button class="pos ${f[x]?'':'open'}" data-act="setPos" data-v="${x}"><small>${x}</small><span>${f[x]?esc(nm(f[x])):'Tap to set'}</span></button>`).join('');
+  // playing time
+  const inns=Object.keys(S.field).filter(k=>Object.keys(S.field[k]).length).map(Number).sort((a,b)=>a-b);
+  const stats=S.roster.map(p=>{
+    let fieldN=0,benchN=0,pos={};
+    inns.forEach(k=>{const e=Object.entries(S.field[k]).find(([,v])=>v===p.id);if(e){fieldN++;pos[e[0]]=(pos[e[0]]||0)+1}else benchN++});
+    return {p,fieldN,benchN,pos};
+  });
+  const maxB=Math.max(0,...stats.map(s=>s.benchN)), minB=Math.min(...stats.map(s=>s.benchN));
+  const table=inns.length?`<table><tr><th>Player</th><th class="c">Field</th><th class="c">Bench</th><th>Spots</th></tr>
+    ${stats.map(s=>`<tr class="${maxB-minB>=2&&s.benchN===maxB?'hot':''}"><td>${tag(s.p.id)}</td><td class="c">${s.fieldN}</td><td class="c">${s.benchN}</td><td>${Object.entries(s.pos).map(([k,v])=>k+(v>1?'×'+v:'')).join(', ')||'—'}</td></tr>`).join('')}</table>
+    <div class="pmeta" style="margin-top:8px">Orange = sat 2+ more innings than someone else.</div>`:'<div class="empty">Set positions for an inning to start tracking.</div>';
+  return `<div class="card">
+    <div class="row" style="align-items:center;margin-bottom:12px">
+      <button class="ib" data-act="fInn" data-v="-1" aria-label="Previous inning">‹</button>
+      <div style="flex:1;text-align:center;font-size:22px;font-weight:800">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
+      <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
+    </div>
+    <div class="posgrid">${grid}</div>
+    <div class="lbl" style="margin-top:14px">Bench (${bench.length})</div>
+    <div class="mini">${bench.map(p=>`<span>${tag(p.id)}</span>`).join('')||'<span>Nobody</span>'}</div>
+    <div class="row" style="margin-top:12px"><button class="btn sm" style="flex:1" data-act="copyInn">Copy inning ${inn-1>0?inn-1:''}</button><button class="btn sm danger" style="flex:1" data-act="clearInn">Clear</button></div>
+  </div>
+  <div class="card"><div class="lbl">Playing time</div>${table}</div>`;
+}
+
+function vSetup(){
+  const ages=[7,8,9,10,11,12,13,14,15,16,17,18];
+  return `<div class="card"><div class="lbl">Team</div>
+    <input id="team" value="${esc(S.team)}" data-change="team" placeholder="Team name">
+  </div>
+  <div class="card"><div class="lbl">Display</div>
+    <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div>
+  </div>
+  <div class="card"><div class="lbl">Pitch count rules (Pitch Smart)</div>
+    <select data-change="age">${ages.map(a=>`<option value="${a}" ${a===S.age?'selected':''}>Age ${a} — limit ${a<=8?50:a<=10?75:a<=12?85:a<=16?95:105}</option>`).join('')}</select>
+  </div>
+  <div class="card"><div class="lbl">Outfielders</div>
+    <div class="seg"><button class="${S.of===3?'on':''}" data-act="of" data-v="3">3 (LF CF RF)</button><button class="${S.of===4?'on':''}" data-act="of" data-v="4">4 (LF LC RC RF)</button></div>
+  </div>
+  <div class="card"><div class="lbl">Roster (${S.roster.length})</div>
+    <div class="field2"><input id="newNum" placeholder="#" inputmode="numeric"><input id="newName" placeholder="Player name"></div>
+    <button class="btn primary" data-act="addPlayer" style="width:100%;margin-bottom:8px">+ Add player</button>
+    ${S.roster.map(p=>`<div class="li"><div class="nm">${tag(p.id)}</div><button class="ib" data-act="rename" data-v="${p.id}" aria-label="Edit">✎</button><button class="ib" data-act="delPlayer" data-v="${p.id}" style="color:var(--bad)" aria-label="Delete">✕</button></div>`).join('')}
+    <div id="editBox"></div>
+  </div>
+  <div class="card"><div class="lbl">Game</div>
+    <button class="btn danger" data-act="newGame" style="width:100%">Start new game</button>
+    <div class="pmeta" style="margin-top:8px">Clears score, pitch counts, bullpen and positions. Keeps roster and batting order.</div>
+  </div>`;
+}
+
+/* ---------- Timers ---------- */
+function fmt(ms){const s=Math.max(0,Math.floor(ms/1000));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function tick(){document.querySelectorAll('[data-start]').forEach(el=>el.textContent=fmt(Date.now()-Number(el.dataset.start)))}
+setInterval(tick,1000);
+
+/* ---------- Actions ---------- */
+function advanceHalf(d){
+  if(d>0){if(S.half==='top')S.half='bot';else{S.half='top';S.inning++}}
+  else{if(S.half==='bot')S.half='top';else if(S.inning>1){S.half='bot';S.inning--}}
+  S.outs=0;S.fieldInning=S.inning;
+}
+const A={
+  tab:v=>{S.tab=v;window.scrollTo(0,0)},
+  halfNext:()=>advanceHalf(1),
+  halfPrev:()=>advanceHalf(-1),
+  out:()=>{buzz();S.outs++;if(S.outs>=3){advanceHalf(1);toast('3 outs — '+(S.half==='top'?'Top':'Bottom')+' '+S.inning)}},
+  score:v=>{pick(v==='us'?'Our runs':'Their runs',[{html:'+1 run',v:1,style:'background:var(--good);color:#04130a;text-align:center'},{html:'−1 run',v:-1,style:'text-align:center'}],d=>{S[v]=Math.max(0,S[v]+d)})},
+  bat:v=>{buzz();S.batIdx+=Number(v)},
+  setBat:v=>{S.batIdx=Number(v);toast(nm(S.order[v])+' is up')},
+  mv:(v,el)=>{const i=Number(v),j=i+Number(el.dataset.d);if(j<0||j>=S.order.length)return;const cur=S.order[((S.batIdx%S.order.length)+S.order.length)%S.order.length];[S.order[i],S.order[j]]=[S.order[j],S.order[i]];S.batIdx=S.order.indexOf(cur)},
+  unorder:v=>{const cur=S.order[S.batIdx%S.order.length];S.order.splice(Number(v),1);const k=S.order.indexOf(cur);S.batIdx=k<0?0:k},
+  order:v=>{S.order.push(v)},
+  choosePitcher:()=>pick('Who is pitching?',playerOpts().map(o=>({...o,html:o.html+`<small>${S.pitches[o.v]||0} pitches</small>`}))
+    ,id=>{S.pitcher=id;S.pen=S.pen.filter(w=>w.id!==id)}),
+  pitch:v=>{buzz();const c=(S.pitches[S.pitcher]||0)+Number(v);S.pitches[S.pitcher]=Math.max(0,c);
+    const L=limit();if(Number(v)>0&&(c===L||c===Math.round(L*.8)))toast(c===L?'Pitch limit reached':'80% of limit — get someone warm')},
+  penAdd:()=>pick('Who is warming up?',playerOpts().filter(o=>o.v!==S.pitcher&&!S.pen.some(w=>w.id===o.v)),id=>{S.pen.push({id,start:Date.now()})}),
+  penOut:v=>{S.pen=S.pen.filter(w=>w.id!==v)},
+  penIn:v=>{S.pitcher=v;S.pen=S.pen.filter(w=>w.id!==v);toast(nm(v)+' now pitching')},
+  goField:()=>{S.fieldInning=S.inning;S.tab='field';window.scrollTo(0,0)},
+  fInn:v=>{S.fieldInning=Math.max(1,S.fieldInning+Number(v))},
+  setPos:ps=>{const inn=S.fieldInning;pick(ps+' — inning '+inn,playerOpts([{html:'— Leave open',v:''}]).map(o=>{
+      const f=S.field[inn]||{};const at=Object.entries(f).find(([,id])=>id===o.v&&o.v);return at?{...o,html:o.html+`<small>now ${at[0]}</small>`}:o}),
+    id=>{const f=S.field[inn]=S.field[inn]||{};const prev=f[ps];
+      if(id){const at=Object.keys(f).find(k=>f[k]===id);if(at&&at!==ps){if(prev)f[at]=prev;else delete f[at]}f[ps]=id}else delete f[ps]})},
+  copyInn:()=>{const i=S.fieldInning;if(i<2||!S.field[i-1])return toast('Nothing to copy');S.field[i]={...S.field[i-1]};toast('Copied inning '+(i-1))},
+  clearInn:()=>{delete S.field[S.fieldInning]},
+  light:v=>{S.light=v==='1'},
+  of:v=>{S.of=Number(v);const ok=positions();Object.values(S.field).forEach(f=>Object.keys(f).forEach(k=>{if(!ok.includes(k))delete f[k]}))},
+  addPlayer:()=>{const name=document.getElementById('newName').value.trim(),num=document.getElementById('newNum').value.trim();
+    if(!name)return toast('Enter a name');const id=uid();S.roster.push({id,name,num});S.order.push(id);toast(name+' added')},
+  delPlayer:v=>confirmBox('Remove '+nm(v)+'?','Remove player',()=>{
+    const cur=S.order[S.batIdx%Math.max(1,S.order.length)];
+    S.roster=S.roster.filter(p=>p.id!==v);S.order=S.order.filter(x=>x!==v);S.pen=S.pen.filter(w=>w.id!==v);
+    if(S.pitcher===v)S.pitcher=null;Object.values(S.field).forEach(f=>Object.keys(f).forEach(k=>{if(f[k]===v)delete f[k]}));
+    const k=S.order.indexOf(cur);S.batIdx=k<0?0:k}),
+  rename:v=>{const p=P(v);document.getElementById('editBox').innerHTML=`<div class="card" style="background:var(--card2);margin-top:10px"><div class="lbl">Edit player</div>
+    <div class="field2"><input id="eNum" value="${esc(p.num)}" inputmode="numeric"><input id="eName" value="${esc(p.name)}"></div>
+    <button class="btn primary" style="width:100%" data-act="saveRename" data-v="${v}">Save</button></div>`;document.getElementById('eName').focus();return 'norender'},
+  saveRename:v=>{const p=P(v);p.name=document.getElementById('eName').value.trim()||p.name;p.num=document.getElementById('eNum').value.trim()},
+  newGame:()=>confirmBox('Start a new game?','Clear game & start new',()=>{Object.assign(S,{batIdx:0,inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},fieldInning:1,tab:'game'});toast('New game ready')}),
+  closeSheet:()=>{closeSheet();return 'norender'},
+  sheetPick:(v,el)=>{const o=pick._opts[Number(el.dataset.i)],cb=sheetCb;closeSheet();cb&&cb(o.v)},
+};
+
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;
+  if(el.classList.contains('ov')&&e.target!==el)return;
+  const r=A[el.dataset.act]&&A[el.dataset.act](el.dataset.v,el);
+  if(r!=='norender'){save();if(!document.querySelector('.ov'))render();else renderBoard()}
+});
+document.addEventListener('change',e=>{
+  const k=e.target.dataset.change;if(!k)return;
+  if(k==='team')S.team=e.target.value.trim()||'My Team';
+  if(k==='age')S.age=Number(e.target.value);
+  save();render();
+});
+render();
+</script>
+</body>
+</html>
