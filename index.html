@@ -66,6 +66,16 @@ main{padding:12px}
 
 /* Field */
 .posgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.diamond{position:relative;width:100%;aspect-ratio:1/1.04;border-radius:14px;overflow:hidden;background:#1f5e2e}
+.diamond svg{position:absolute;inset:0;width:100%;height:100%}
+.fp{position:absolute;transform:translate(-50%,-50%);width:23%;max-width:96px;background:rgba(8,12,18,.86);border:2px solid rgba(255,255,255,.9);border-radius:12px;padding:4px 4px 5px;text-align:center;color:#fff;line-height:1.15;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.fp small{display:block;font-size:11px;font-weight:900;color:#ffc83d;letter-spacing:.5px}
+.fp span{display:block;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp.open{border-style:dashed;border-color:rgba(255,255,255,.55);background:rgba(8,12,18,.55)}
+.fp.open span{color:#c9d2dc;font-weight:600}
+.diamond.small .fp{width:21%;padding:2px 3px 3px;border-width:1.5px}
+.diamond.small .fp small{font-size:9px}.diamond.small .fp span{font-size:11px}
+.bench button{background:var(--card2);border-radius:10px;padding:8px 10px;font-size:15px;font-weight:600}
 .pos{background:var(--card2);border-radius:14px;min-height:72px;padding:8px;text-align:left;display:flex;flex-direction:column;justify-content:center}
 .pos small{font-size:13px;color:var(--accent);font-weight:800}
 .pos span{font-size:17px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -184,6 +194,34 @@ function renderBoard(){
   </div>`;
 }
 
+const COORD={P:[50,69],C:[50,94],'1B':[75,61],'2B':[63,48],SS:[37,48],'3B':[25,61],
+  LF:[18,35],CF:[50,20],RF:[82,35]};
+const COORD4={LF:[15,40],LC:[35,23],RC:[65,23],RF:[85,40]};
+const FIELD_SVG=`<svg viewBox="0 0 100 104" preserveAspectRatio="none" aria-hidden="true">
+  <rect width="100" height="104" fill="#1c5429"/>
+  <path d="M50,92 L1,43 Q50,-16 99,43 Z" fill="#2f8a43"/>
+  <path d="M50,92 L1,43 Q50,-16 99,43 Z" fill="none" stroke="#e8e2d0" stroke-width=".6"/>
+  <path d="M50,92 L1,43 Q50,-16 99,43 Z" fill="url(#stripes)" opacity=".18"/>
+  <path d="M50,98 L20,66 Q50,30 80,66 Z" fill="#b9814f"/>
+  <path d="M50,88 L67,71 L50,54 L33,71 Z" fill="#2f8a43"/>
+  <circle cx="50" cy="71" r="4.2" fill="#b9814f"/><rect x="48.6" y="70.6" width="2.8" height=".8" fill="#fff"/>
+  <circle cx="50" cy="91" r="5.5" fill="#b9814f"/>
+  <path d="M50,92 L1,43 M50,92 L99,43" stroke="#fff" stroke-width=".5"/>
+  <rect x="65.8" y="69.8" width="2.4" height="2.4" fill="#fff" transform="rotate(45 67 71)"/>
+  <rect x="48.8" y="52.8" width="2.4" height="2.4" fill="#fff" transform="rotate(45 50 54)"/>
+  <rect x="31.8" y="69.8" width="2.4" height="2.4" fill="#fff" transform="rotate(45 33 71)"/>
+  <path d="M48.6,90.2 h2.8 v1.3 l-1.4,1.2 l-1.4,-1.2 Z" fill="#fff"/>
+  <defs><pattern id="stripes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="#fff"/></pattern></defs>
+</svg>`;
+function fieldView(inn,interactive,small){
+  const f=S.field[inn]||{};
+  return `<div class="diamond ${small?'small':''}" ${interactive?'':'data-act="goField"'}>${FIELD_SVG}
+  ${positions().map(ps=>{const c=(S.of===4&&COORD4[ps])||COORD[ps];const id=f[ps];
+    const t=interactive?`button data-act="setPos" data-v="${ps}"`:'div';
+    return `<${t} class="fp ${id?'':'open'}" style="left:${c[0]}%;top:${c[1]}%"><small>${ps}</small><span>${id?esc(nm(id)):(interactive?'+ Set':'—')}</span></${interactive?'button':'div'}>`}).join('')}
+  </div>`;
+}
+
 function vGame(){
   const o=S.order, n=o.length;
   let bat='';
@@ -215,12 +253,11 @@ function vGame(){
   const pen=S.pen.length?`<div class="chips">${S.pen.map(w=>`<div class="chip"><div class="nm">${tag(w.id)}</div><div class="tm" data-start="${w.start}">0:00</div><button class="go" data-act="penIn" data-v="${w.id}">Put in</button><button data-act="penOut" data-v="${w.id}" aria-label="Stop warming">✕</button></div>`).join('')}</div>`:`<div class="empty">Nobody warming up.</div>`;
   // Field now
   const f=S.field[S.inning]||{};
-  const fieldNow=positions().map(ps=>`<span><b>${ps}</b>${f[ps]?esc(nm(f[ps])):'—'}</span>`).join('');
   return `
   <div class="card"><div class="lbl">Now batting <span>${n?((((S.batIdx%n)+n)%n)+1)+' of '+n:''}</span></div>${bat}</div>
   <div class="card"><div class="lbl">Pitcher</div>${pit}</div>
   <div class="card"><div class="lbl">Warming up <button class="link" data-act="penAdd">+ Add</button></div>${pen}</div>
-  <div class="card"><div class="lbl">Defense · inning ${S.inning} <button class="link" data-act="goField">Edit</button></div><div class="mini">${fieldNow}</div></div>`;
+  <div class="card"><div class="lbl">Defense · inning ${S.inning} <button class="link" data-act="goField">Edit</button></div>${fieldView(S.inning,false,true)}</div>`;
 }
 
 function vLineup(){
@@ -259,9 +296,9 @@ function vField(){
       <div style="flex:1;text-align:center;font-size:22px;font-weight:800">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
       <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
     </div>
-    <div class="posgrid">${grid}</div>
-    <div class="lbl" style="margin-top:14px">Bench (${bench.length})</div>
-    <div class="mini">${bench.map(p=>`<span>${tag(p.id)}</span>`).join('')||'<span>Nobody</span>'}</div>
+    ${fieldView(inn,true)}
+    <div class="lbl" style="margin-top:14px">Bench (${bench.length}) <span>Tap a name to put them in</span></div>
+    <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div>
     <div class="row" style="margin-top:12px"><button class="btn sm" style="flex:1" data-act="copyInn">Copy inning ${inn-1>0?inn-1:''}</button><button class="btn sm danger" style="flex:1" data-act="clearInn">Clear</button></div>
   </div>
   <div class="card"><div class="lbl">Playing time</div>${table}</div>`;
@@ -328,6 +365,8 @@ const A={
       const f=S.field[inn]||{};const at=Object.entries(f).find(([,id])=>id===o.v&&o.v);return at?{...o,html:o.html+`<small>now ${at[0]}</small>`}:o}),
     id=>{const f=S.field[inn]=S.field[inn]||{};const prev=f[ps];
       if(id){const at=Object.keys(f).find(k=>f[k]===id);if(at&&at!==ps){if(prev)f[at]=prev;else delete f[at]}f[ps]=id}else delete f[ps]})},
+  benchPut:id=>{const inn=S.fieldInning,f=S.field[inn]||{};pick('Put '+nm(id)+' at…',positions().map(ps=>({html:ps+(f[ps]?`<small>replaces ${esc(nm(f[ps]))}</small>`:''),v:ps})),
+    ps=>{(S.field[inn]=S.field[inn]||{})[ps]=id})},
   copyInn:()=>{const i=S.fieldInning;if(i<2||!S.field[i-1])return toast('Nothing to copy');S.field[i]={...S.field[i-1]};toast('Copied inning '+(i-1))},
   clearInn:()=>{delete S.field[S.fieldInning]},
   light:v=>{S.light=v==='1'},
