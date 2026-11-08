@@ -1,4 +1,4 @@
-# Dugout Lineup
+# GS Baseball Dugout
 
 Game-day dugout clipboard: batting order, pitch counts, bullpen timers, defense on a field diagram, a substitution plan (rotations, locked spots, pitching plan, Fair auto-fill) and live field updates.
 

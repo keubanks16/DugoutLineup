@@ -6,17 +6,20 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Dugout">
-<meta name="theme-color" content="#0b0f14">
-<title>Dugout Clipboard</title>
+<meta name="apple-mobile-web-app-title" content="GS Dugout">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="img/favicon.png">
+<meta name="theme-color" content="#1f2847">
+<title>GS Baseball Dugout</title>
 <style>
 :root{
-  --bg:#0b0f14;--card:#151b23;--card2:#1d2530;--line:#2a3441;--text:#f2f5f8;--dim:#8d9aab;
-  --accent:#ffc83d;--good:#35d07f;--warn:#ffb020;--bad:#ff5a5a;--blue:#4da3ff;
+  --bg:#0b1020;--card:#151d33;--card2:#1f2944;--line:#2c3858;--text:#f2f5fb;--dim:#93a2bf;
+  --accent:#b4d0f8;--navy:#1f2847;--good:#35d07f;--warn:#ffb020;--bad:#ff5a5a;--blue:#4da3ff;
 }
 body.light{
   --bg:#ffffff;--card:#f1f3f6;--card2:#e3e7ec;--line:#c9d0d9;--text:#05070a;--dim:#4b5563;
-  --accent:#b07800;--good:#0a8a4a;--warn:#b86e00;--bad:#c81e1e;--blue:#0057c2;
+  --accent:#1f2847;--good:#0a8a4a;--warn:#b86e00;--bad:#c81e1e;--blue:#0057c2;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;overflow-x:hidden;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -50,7 +53,8 @@ main{padding:12px}
 .queue small{display:block;font-size:11px;color:var(--dim);font-weight:700;letter-spacing:1px}
 .row{display:flex;gap:10px}
 .btn{background:var(--card2);border-radius:14px;min-height:64px;padding:0 16px;font-size:19px;font-weight:700;flex:1}
-.btn.primary{background:var(--accent);color:#111}
+.btn.primary{background:var(--accent);color:var(--navy)}
+body.light .btn.primary{color:#fff}
 .btn.sm{min-height:48px;font-size:16px;flex:0 0 auto}
 .btn.danger{background:transparent;border:2px solid var(--bad);color:var(--bad)}
 .pitch-wrap{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
@@ -74,7 +78,7 @@ main{padding:12px}
 .diamond{position:relative;width:100%;aspect-ratio:1/1.04;border-radius:14px;overflow:hidden;background:#1f5e2e}
 .diamond svg{position:absolute;inset:0;width:100%;height:100%}
 .fp{position:absolute;transform:translate(-50%,-50%);width:23%;max-width:96px;background:rgba(8,12,18,.86);border:2px solid rgba(255,255,255,.9);border-radius:12px;padding:4px 4px 5px;text-align:center;color:#fff;line-height:1.15;box-shadow:0 2px 6px rgba(0,0,0,.4)}
-.fp small{display:block;font-size:11px;font-weight:900;color:#ffc83d;letter-spacing:.5px}
+.fp small{display:block;font-size:11px;font-weight:900;color:#b4d0f8;letter-spacing:.5px}
 .fp span{display:block;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fp.open{border-style:dashed;border-color:rgba(255,255,255,.55);background:rgba(8,12,18,.55)}
 .fp.open span{color:#c9d2dc;font-weight:600}
@@ -87,11 +91,23 @@ main{padding:12px}
 .fs .diamond{aspect-ratio:auto;width:min(100cqw,100cqh*1.3);height:min(100cqh,100cqw*1.55);container-type:size}
 .fs .fp{width:min(22cqw,150px);max-width:none;padding:min(1.2cqh,6px) 4px}
 .fs .fp span{font-size:clamp(12px,min(4.2cqw,3.6cqh),20px)}.fs .fp small{font-size:clamp(10px,min(3cqw,2.6cqh),14px)}
+.fs-score{display:flex;align-items:center;justify-content:center;gap:12px}
+.fs-sc{display:flex;align-items:center;gap:8px;background:var(--card);border-radius:16px;padding:6px 8px}
+.fs-sc div{text-align:center;min-width:84px}
+.fs-sc small{display:block;font-size:11px;letter-spacing:1px;color:var(--dim);text-transform:uppercase;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fs-sc b{font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.fs-sc button{width:52px;height:52px;border-radius:12px;background:var(--card2);font-size:26px;font-weight:800}
+.fs-dash{font-size:28px;color:var(--dim)}
+@media (max-width:520px){.fs-head img{display:none}.fs-score{gap:6px}.fs-sc{gap:4px;padding:4px}.fs-sc div{min-width:54px}.fs-sc small{max-width:70px;font-size:10px}.fs-sc b{font-size:30px}.fs-sc button{width:38px;height:44px;font-size:22px}.fs-dash{font-size:20px}}
+.fs .bench span{background:var(--card2);border-radius:10px;padding:8px 10px;font-size:15px;font-weight:600;flex:0 0 auto}
 .fs-side{display:flex;flex-direction:column;gap:8px;min-height:0}
 .fs .bench{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
 @media (orientation:landscape){
-  .fs{display:grid;grid-template-columns:1fr minmax(150px,26%);grid-template-rows:auto 1fr}
+  .fs{display:grid;grid-template-columns:1fr minmax(150px,26%);grid-template-rows:auto auto 1fr}
   .fs-head{grid-column:1/-1}
+  .fs-score{grid-column:1;grid-row:2}
+  .fs-body{grid-column:1;grid-row:3}
+  .fs-side{grid-column:2;grid-row:2/4}
   .fs .diamond{width:min(100cqw,100cqh*1.7)}
   .fs .bench{flex-direction:column;flex-wrap:nowrap;overflow-y:auto;overflow-x:hidden}
   .fs .bench button{text-align:left}
@@ -122,7 +138,8 @@ tr.hot td{color:var(--warn);font-weight:700}
 .ib{width:52px;height:52px;border-radius:12px;background:var(--card2);font-size:20px;font-weight:800;flex:0 0 auto}
 .seg{display:flex;background:var(--card2);border-radius:14px;padding:4px;gap:4px}
 .seg button{flex:1;min-height:48px;border-radius:10px;font-weight:700;background:none}
-.seg button.on{background:var(--accent);color:#111}
+.seg button.on{background:var(--accent);color:var(--navy)}
+body.light .seg button.on{color:#fff}
 .field2{display:grid;grid-template-columns:90px 1fr;gap:8px;margin-bottom:8px}
 
 /* Tabs */
@@ -139,12 +156,16 @@ nav button.on{color:var(--accent);background:var(--card2)}
 .sheet .opt small{color:var(--dim);font-weight:600;margin-left:6px;font-size:14px}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-weight:700;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
-.status{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--dim);padding:8px 14px 0}
+.brandbar{display:flex;align-items:center;gap:8px;padding:8px 14px 0}
+.brandbar img{height:22px;width:auto}
+.brandbar b{font-size:13px;letter-spacing:2px;color:var(--accent)}
+body.light .brandbar img{filter:brightness(.35) saturate(2)}
+.status{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:var(--dim)}
 .status i{width:9px;height:9px;border-radius:50%;display:inline-block}
 .push{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:24px}
 .push-in{text-align:center;width:100%;max-width:420px;animation:pop .35s ease-out}
 @keyframes pop{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
-.push-t{font-size:40px;font-weight:900;color:#ffc83d;letter-spacing:2px}
+.push-t{font-size:40px;font-weight:900;color:#b4d0f8;letter-spacing:2px}
 .push-m{font-size:22px;color:#fff;margin:10px 0 26px;line-height:1.3}
 .push-go{width:100%;min-height:110px;border-radius:26px;background:#35d07f;color:#04130a;font-size:30px;font-weight:900;box-shadow:0 0 0 0 rgba(53,208,127,.6);animation:pulse 1.4s infinite}
 @keyframes pulse{70%{box-shadow:0 0 0 22px rgba(53,208,127,0)}100%{box-shadow:0 0 0 0 rgba(53,208,127,0)}}
@@ -161,7 +182,7 @@ body.viewer .admin-only{display:none!important}
 </head>
 <body>
 <div class="board" id="board"></div>
-<div class="status" id="status"></div>
+<div class="brandbar"><img src="img/gs-light-sm.png" alt="GS Baseball"><b>GS BASEBALL</b><div class="status" id="status"></div></div>
 <main id="main"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
@@ -177,7 +198,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 
 function defaults(){
   const roster=Array.from({length:10},(_,i)=>({id:uid(),name:'Player '+(i+1),num:String(i+1)}));
-  return {team:'My Team',age:8,of:4,roster,order:roster.map(p=>p.id),batIdx:0,
+  return {team:'GS Baseball',age:8,of:4,roster,order:roster.map(p=>p.id),batIdx:0,
     inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},
     fieldInning:1,light:false,tab:'game',opp:'',customLimit:0,history:[],gameStart:Date.now(),
     innings:6,coachPitch:true,rots:[],locks:{},sitAll:{},pplan:[],noRe:true,autoPush:true,seenPush:0,_v:0};
@@ -185,7 +206,7 @@ function defaults(){
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.roster)S=defaults();
-S={...defaults(),...S,roster:S.roster};
+S={...defaults(),...S,roster:S.roster};if(S.team==='My Team')S.team='GS Baseball';
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 const GAME=['batIdx','inning','half','outs','us','them','pitches','pitcher','pen','field','fieldInning','opp','gameStart'];
 const clone=o=>JSON.parse(JSON.stringify(o));
@@ -293,7 +314,7 @@ function showPush(p){
   if(S.quiet){if(p.inning){S.fieldInning=p.inning;if(!document.querySelector('.ov')&&!isTyping())render()}toast('Field updated'+(p.inning?' — inning '+p.inning:''));return}
   try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
   document.getElementById('pushov').innerHTML=`<div class="push"><div class="push-in">
-    <div style="font-size:64px">📣</div>
+    <img src="img/gs-light.png" alt="" style="height:90px;margin-bottom:8px">
     <div class="push-t">FIELD UPDATE</div>
     <div class="push-m">${esc(p.msg||'')}${p.inning?`<br><b>Inning ${p.inning}</b>`:''}</div>
     <button class="push-go" data-act="pushGo" data-v="${p.inning||''}">SEE THE FIELD</button>
@@ -510,10 +531,12 @@ let pdfReady=null,pdfImportData=null;
 async function buildPdf(){
   const {PDFDocument,StandardFonts,rgb}=await loadPdfLib();
   const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),bold=await doc.embedFont(StandardFonts.HelveticaBold);
-  doc.setTitle(pdfTxt(S.team+' lineup'));doc.setCreator('Dugout Lineup');
-  const form=doc.getForm(),names=S.roster.map(p=>pdfTag(p.id)),ink=rgb(.07,.09,.12),dim=rgb(.38,.42,.48),gold=rgb(.95,.76,.2);
+  doc.setTitle(pdfTxt(S.team+' lineup'));doc.setCreator('GS Baseball Dugout');
+  const form=doc.getForm(),names=S.roster.map(p=>pdfTag(p.id)),ink=rgb(31/255,40/255,71/255),dim=rgb(.38,.42,.52),gold=rgb(180/255,208/255,248/255);
   const date=new Date().toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+  let logo=null;try{logo=await doc.embedPng(await (await fetch('img/gs-light.png')).arrayBuffer())}catch(e){}
   const head=(pg,t,w)=>{pg.drawRectangle({x:0,y:pg.getHeight()-64,width:w,height:64,color:ink});
+    if(logo){const h=44,lw=logo.width*h/logo.height;pg.drawImage(logo,{x:w-36-lw,y:pg.getHeight()-54,width:lw,height:h})}
     pg.drawText(pdfTxt(t),{x:36,y:pg.getHeight()-38,size:20,font:bold,color:rgb(1,1,1)});
     pg.drawText(pdfTxt(S.team+(S.opp?' vs '+S.opp:'')+'  |  '+date),{x:36,y:pg.getHeight()-56,size:10,font,color:gold})};
   const box={textColor:ink,backgroundColor:rgb(.95,.96,.98),borderColor:rgb(.75,.78,.82),borderWidth:1,font};
@@ -661,17 +684,20 @@ function vGame(){
 function vFull(){
   const inn=S.fieldInning,f=S.field[inn]||{},used=Object.values(f);
   const bench=S.roster.filter(p=>!used.includes(p.id));
+  const sc=(k,l)=>`<div class="fs-sc">${isAdmin?`<button data-act="fsScore" data-v="${k}:-1" aria-label="${l} minus 1">−</button>`:''}<div><small>${l}</small><b>${S[k]}</b></div>${isAdmin?`<button data-act="fsScore" data-v="${k}:1" aria-label="${l} plus 1">+</button>`:''}</div>`;
   return `<div class="fs">
     <div class="fs-head">
+      <img src="img/gs-light-sm.png" alt="GS Baseball" style="height:34px">
       <button class="ib" data-act="fInn" data-v="-1" aria-label="Previous inning">‹</button>
       <div class="t">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
       <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
       <button class="ib admin-only" data-act="pushField" aria-label="Send field update" style="margin-left:6px">📣</button>
       <button class="ib" data-act="fsClose" aria-label="Exit full screen" style="margin-left:6px">✕</button>
     </div>
-    <div class="fs-body">${fieldView(inn,true,false,true)}</div>
-    <div class="fs-side"><div class="lbl" style="margin:0">Bench (${bench.length}) <span class="admin-only">Tap a name to put them in</span></div>
-    <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div></div>
+    <div class="fs-score">${sc('us',esc(S.team||'Us'))}<span class="fs-dash">–</span>${sc('them',esc(S.opp||'Them'))}</div>
+    <div class="fs-body">${fieldView(inn,false,false,true)}</div>
+    <div class="fs-side"><div class="lbl" style="margin:0">Bench (${bench.length})</div>
+    <div class="mini bench">${bench.map(p=>`<span>${tag(p.id)}</span>`).join('')||'<span>Nobody</span>'}</div></div>
   </div>`;
 }
 
@@ -825,6 +851,7 @@ const A={
     ps=>{(S.field[inn]=S.field[inn]||{})[ps]=id})},
   fsOpen:v=>{if(v==='now')S.fieldInning=S.inning;S.full=true;
     try{const d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen)&&(d.requestFullscreen||d.webkitRequestFullscreen).call(d).catch?.(()=>{})}catch(e){}},
+  fsScore:v=>{const [k,d]=v.split(':');S[k]=Math.max(0,S[k]+Number(d));buzz()},
   fsClose:()=>{S.full=false;try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}},
   copyInn:()=>{const i=S.fieldInning;if(i<2||!S.field[i-1])return toast('Nothing to copy');S.field[i]={...S.field[i-1]};toast('Copied inning '+(i-1))},
   clearInn:()=>{delete S.field[S.fieldInning]},
@@ -859,7 +886,7 @@ const A={
       const canShare=(()=>{try{return navigator.canShare&&navigator.canShare({files:[new File([pdfReady.bytes],pdfReady.fname,{type:'application/pdf'})]})}catch(e){return false}})();
       const url=URL.createObjectURL(new Blob([pdfReady.bytes],{type:'application/pdf'}));
       pdfSheet(`<h3>PDF ready</h3><div class="pmeta" style="margin:0 4px 12px">${esc(pdfReady.fname)}<br>Page 1 is the batting order, page 2 is the defense by inning.</div>
-        ${canShare?'<button class="opt" data-act="pdfShare" style="background:var(--accent);color:#111;text-align:center">Send to a coach…</button>':''}
+        ${canShare?'<button class="opt" data-act="pdfShare" style="background:var(--accent);color:var(--navy);text-align:center">Send to a coach…</button>':''}
         <a class="opt" href="${url}" download="${esc(pdfReady.fname)}" style="text-align:center;text-decoration:none;color:var(--text);display:flex;align-items:center;justify-content:center">Download / open PDF</a>
         <div class="pmeta" style="margin:4px 4px 10px">On iPhone, the coach opens it in Files (or Adobe Acrobat), taps a name to change it, then Saves and sends it back.</div>`)}
     catch(e){pdfSheet('<h3>Couldn’t make the PDF</h3><div class="pmeta">'+esc(e.message)+'</div>')}},
