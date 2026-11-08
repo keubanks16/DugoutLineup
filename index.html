@@ -307,9 +307,12 @@ const INF=new Set(['P','C','1B','2B','3B','SS']);
 const BENCH_WHY=[['practice','Missed practice'],['coach','Coach’s decision'],['other','Other']];
 const planPool=()=>{const o=S.order.filter(id=>P(id));return o.length?o:S.roster.map(p=>p.id)};
 const isSwap=r=>r&&r.kind==='swap';
-const planRots=()=>(Array.isArray(S.rots)?S.rots:[]).filter(r=>r&&r.pos&&r.a&&(isSwap(r)?Array.isArray(r.inns)&&r.inns.length&&r.sub!==r.a:r.b&&r.a!==r.b&&r.c!==r.a&&r.c!==r.b));
-const rotIds=r=>isSwap(r)?[r.a].concat(r.sub?[r.sub]:[]):[r.a,r.b].concat(r.c?[r.c]:[]);
-const rotTurn=(r,i)=>{if(isSwap(r))return r.inns.includes(i+1)?{on:r.sub||'',off:[r.a],keepOff:r.a}:{on:r.a,off:[]};
+const isSched=r=>r&&r.kind==='sched';
+const schedIds=r=>[...new Set(Object.values(r.by||{}).filter(Boolean))];
+const planRots=()=>(Array.isArray(S.rots)?S.rots:[]).filter(r=>r&&r.pos&&(isSched(r)?schedIds(r).length>0:!!r.a)&&(isSched(r)?true:isSwap(r)?Array.isArray(r.inns)&&r.inns.length&&r.sub!==r.a:r.b&&r.a!==r.b&&r.c!==r.a&&r.c!==r.b));
+const rotIds=r=>isSched(r)?schedIds(r):isSwap(r)?[r.a].concat(r.sub?[r.sub]:[]):[r.a,r.b].concat(r.c?[r.c]:[]);
+const rotTurn=(r,i)=>{if(isSched(r)){const on=(r.by||{})[i+1]||'';return {on,off:schedIds(r).filter(x=>x!==on)}}
+  if(isSwap(r))return r.inns.includes(i+1)?{on:r.sub||'',off:[r.a],keepOff:r.a}:{on:r.a,off:[]};
   const ids=rotIds(r),on=ids[i%ids.length];return {on,off:ids.filter(x=>x!==on)}};
 const innList=ns=>{const a=ns.slice().sort((x,y)=>x-y);return (a.length===1?'inning ':'innings ')+a.join(', ')};
 const sitAllOf=()=>S.sitAll&&typeof S.sitAll==='object'?S.sitAll:{};
@@ -372,14 +375,14 @@ function curPlan(){return Array.from({length:S.innings||6},(_,i)=>S.field[i+1]||
 function planFlags(plan){
   const pool=planPool(),n=Math.min(plan.length,S.innings||6);if(!n||!plan.some(r=>Object.keys(r).length))return [];
   const flags=[],benchN={},why=sitAllOf(),locked=new Set(Object.values(lockOf()));
-  const rotSit={};for(const r of planRots())if(r.sit&&!isSwap(r))for(const id of rotIds(r))rotSit[id]=rotIds(r).length-1;
+  const rotSit={};for(const r of planRots()){if(!r.sit||isSwap(r))continue;for(const id of rotIds(r))rotSit[id]=isSched(r)?n-Object.values(r.by).filter(x=>x===id).length:rotIds(r).length-1}
   for(const id of pool){if(why[id])continue;let b=0,run=0,maxRun=0,inf=0;
     for(let i=0;i<n;i++){const pos=Object.keys(plan[i]||{}).find(k=>plan[i][k]===id);if(!pos){b++;run++;maxRun=Math.max(maxRun,run)}else{run=0;if(INF.has(pos))inf++}}
     const name=nm(id);
     if(b===n&&n>=2){flags.push(`${name} sits the whole game. Add a reason under Sitting all game.`);continue}
     if(rotSit[id]==null&&!locked.has(id))benchN[id]=b;
     if(maxRun>=2&&maxRun>(rotSit[id]||0))flags.push(`${name} sits ${maxRun} innings in a row.`);
-    if(n>=3&&!inf&&b<n&&!locked.has(id))flags.push(`${name} never plays the infield.`)}
+    if(n>=3&&!inf&&b<n&&!locked.has(id)&&!planRots().some(r=>isSched(r)&&r.sit&&rotIds(r).includes(id)))flags.push(`${name} never plays the infield.`)}
   const vals=Object.values(benchN);
   if(vals.length&&Math.max(...vals)-Math.min(...vals)>1)flags.push(`Bench time is uneven: from ${Math.min(...vals)} to ${Math.max(...vals)} innings.`);
   const empty=[];for(let i=0;i<n;i++){if(positions().some(p=>!(plan[i]||{})[p])&&pool.length>=positions().length)empty.push(i+1)}
@@ -393,7 +396,7 @@ function totalsHTML(plan){
   const rows=pool.map(id=>{let f=0,b=0,inf=0,of=0;for(let i=0;i<n;i++){const pos=Object.keys(plan[i]||{}).find(k=>plan[i][k]===id);if(!pos)b++;else{f++;INF.has(pos)?inf++:of++}}return {id,f,b,inf,of}}).sort((a,b)=>b.b-a.b);
   return `<table><tr><th>Player</th><th class="c">Field</th><th class="c">Bench</th><th class="c">IF</th><th class="c">OF</th><th class="c">Past</th></tr>${rows.map(r=>`<tr><td>${esc(nm(r.id))}</td><td class="c">${r.f}</td><td class="c">${r.b}</td><td class="c">${r.inf}</td><td class="c">${r.of}</td><td class="c">${season[r.id]!=null?Math.round(season[r.id]*100)+'%':'–'}</td></tr>`).join('')}</table>`;
 }
-let planInnSel=1,planOpen=false,planPrev=null,planSeed=0,PF={type:'turns',pos:'',a:'',b:'',c:'',sit:'sit',inns:[],sub:'',err:'',sitId:'',sitR:'practice',sitNote:''};
+let planInnSel=1,planOpen=false,planPrev=null,planSeed=0,PF={by:{},type:'turns',pos:'',a:'',b:'',c:'',sit:'sit',inns:[],sub:'',err:'',sitId:'',sitR:'practice',sitNote:''};
 function selHTML(key,val,opts,attr){return `<select ${attr||`data-pf="${key}"`}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(val)?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
 function vPlan(){
   const pool=planPool(),POS=positions(),opts=[['','—']].concat(pool.map(id=>[id,nm(id)]));
@@ -444,11 +447,14 @@ function vPlan(){
       ${Object.keys(L).length?`<button class="btn sm" data-act="lockNone" style="width:100%;margin-top:8px">Rotate all</button>`:''}
     </div>
     <div class="card"><div class="lbl">Rotations</div>
-      ${rots.length?rots.map((r,i)=>`<div class="li"><div class="nm" style="white-space:normal;font-size:16px">${isSwap(r)?`${esc(nm(r.a))} out at <b>${r.pos}</b> in ${innList(r.inns)}${r.sub?' · '+esc(nm(r.sub))+' goes in':' · whoever needs time goes in'}`:`${rotIds(r).map(id=>esc(nm(id))).join(r.c?', ':' ↔ ')} take turns at <b>${r.pos}</b>${r.sit?' · the others sit':''}`}</div><button class="ib" data-act="rotDel" data-v="${i}" style="color:var(--bad)">✕</button></div>`).join(''):'<div class="pmeta">Two or three players share a spot and take turns, like #1 and #2 in RC. Or take a starter out for certain innings.</div>'}
-      <div style="margin-top:10px">${segBtns('pfType',PF.type,[['turns','Take turns'],['swap','Out for innings']])}</div>
+      ${rots.length?rots.map((r,i)=>`<div class="li"><div class="nm" style="white-space:normal;font-size:16px">${isSched(r)?`<b>${r.pos}</b> by inning: ${Object.keys(r.by).filter(k=>r.by[k]).sort((a,b)=>a-b).map(k=>k+' '+esc(nm(r.by[k]))).join(', ')}${r.sit?' · the others sit':''}`:isSwap(r)?`${esc(nm(r.a))} out at <b>${r.pos}</b> in ${innList(r.inns)}${r.sub?' · '+esc(nm(r.sub))+' goes in':' · whoever needs time goes in'}`:`${rotIds(r).map(id=>esc(nm(id))).join(r.c?', ':' ↔ ')} take turns at <b>${r.pos}</b>${r.sit?' · the others sit':''}`}</div><button class="ib" data-act="rotDel" data-v="${i}" style="color:var(--bad)">✕</button></div>`).join(''):'<div class="pmeta">Two or three players share a spot and take turns, like #1 and #2 in RC. Or take a starter out for certain innings.</div>'}
+      <div style="margin-top:10px">${segBtns('pfType',PF.type,[['turns','Take turns'],['swap','Out for innings'],['sched','By inning']])}</div>
       <div class="pf">
         <label><span class="pmeta">Position</span>${selHTML('pos',PF.pos||POS[POS.length-1],POS.map(p=>[p,p]))}</label>
-        ${PF.type==='turns'?`
+        ${PF.type==='sched'?`
+        <div class="pmeta">Who plays this spot each inning. Leave an inning on Auto to let Fair auto-fill pick.</div>
+        <div class="posgrid2">${Array.from({length:S.innings||6},(_,i)=>i+1).map(k=>`<label><b>Inning ${k}</b>${selHTML('',(PF.by||{})[k]||'',[['','Auto']].concat(opts.slice(1)),`data-pfby="${k}"`)}</label>`).join('')}</div>
+        <label><span class="pmeta">Kids in this rotation, when not at the spot</span>${segBtns('pfSit',PF.sit,[['sit','Sit'],['play','Play elsewhere']])}</label>`:PF.type==='turns'?`
         <label><span class="pmeta">Player 1 · innings ${PF.c?'1, 4, 7':'1, 3, 5'}</span>${selHTML('a',PF.a,opts)}</label>
         <label><span class="pmeta">Player 2 · innings ${PF.c?'2, 5':'2, 4, 6'}</span>${selHTML('b',PF.b,opts)}</label>
         <label><span class="pmeta">Player 3 (optional) · innings 3, 6</span>${selHTML('c',PF.c,[['','None']].concat(opts.slice(1)))}</label>
@@ -790,12 +796,15 @@ const A={
   pfSit:v=>{PF.sit=v},
   pfInn:v=>{const k=Number(v);PF.inns=PF.inns.includes(k)?PF.inns.filter(x=>x!==k):PF.inns.concat([k])},
   rotAdd:()=>{const pos=PF.pos||positions()[positions().length-1];let nr;
-    if(PF.type==='swap'){if(!PF.a)return void(PF.err='Pick the starter.');if(!PF.inns.length)return void(PF.err='Pick the innings they come out.');if(PF.sub===PF.a)return void(PF.err='Pick a different player to go in.');
+    if(PF.type==='sched'){const by={};for(const [k,v] of Object.entries(PF.by||{}))if(v&&Number(k)<=(S.innings||6))by[k]=v;
+      if(!Object.keys(by).length)return void(PF.err='Pick a player for at least one inning.');
+      nr={kind:'sched',pos,by,sit:PF.sit==='sit'}}
+    else if(PF.type==='swap'){if(!PF.a)return void(PF.err='Pick the starter.');if(!PF.inns.length)return void(PF.err='Pick the innings they come out.');if(PF.sub===PF.a)return void(PF.err='Pick a different player to go in.');
       nr={kind:'swap',pos,a:PF.a,inns:PF.inns.slice().sort((a,b)=>a-b)};if(PF.sub)nr.sub=PF.sub}
     else{const ids=[PF.a,PF.b,PF.c].filter(Boolean);if(!PF.a||!PF.b)return void(PF.err='Pick at least two players.');if(new Set(ids).size!==ids.length)return void(PF.err='Pick different players.');
       nr={pos,a:PF.a,b:PF.b,sit:PF.sit==='sit'};if(PF.c)nr.c=PF.c}
-    if(planRots().some(x=>x.pos===pos||rotIds(x).some(id=>rotIds(nr).includes(id))))return void(PF.err='One of them, or that position, is already in a rotation.');
-    S.rots=planRots().concat([nr]);Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],err:''});toast('Rotation added')},
+    if(planRots().some(x=>x.pos===pos||rotIds(x).some(id=>rotIds(nr).includes(id))))return void(PF.err='One of them, or that position, is already in a rotation. Remove it with ✕ first, or use By inning to set every inning of that spot.');
+    S.rots=planRots().concat([nr]);Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],by:{},err:''});toast('Rotation added')},
   rotDel:v=>{const r=planRots();r.splice(Number(v),1);S.rots=r},
   sitAdd:()=>{if(!PF.sitId)return toast('Pick a player');S.sitAll={...sitAllOf(),[PF.sitId]:{r:PF.sitR,note:PF.sitR==='other'?PF.sitNote:''}};PF.sitId='';PF.sitNote=''},
   sitDel:v=>{const w={...sitAllOf()};delete w[v];S.sitAll=w},
@@ -813,6 +822,7 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('change',e=>{
   const t=e.target;
+  if(t.dataset.pfby!==undefined){PF.by={...(PF.by||{}),[t.dataset.pfby]:t.value};PF.err='';render();return}
   if(t.dataset.pf!==undefined||t.dataset.pfi!==undefined){PF[t.dataset.pf||t.dataset.pfi]=t.value;PF.err='';render();return}
   if(!isAdmin)return;
   if(t.dataset.dp!==undefined){const inn=planInnSel,f=S.field[inn]={...(S.field[inn]||{})},pos=t.dataset.dp,id=t.value,prev=f[pos];
