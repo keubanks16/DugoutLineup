@@ -1,0 +1,15 @@
+{
+  // Cloudflare Worker that saves the game so every phone sees the same lineup.
+  // Deploy: Cloudflare dashboard -> Workers & Pages -> Create -> Import a repository -> keubanks16/DugoutLineup.
+  "name": "dugoutlineup",
+  "main": "worker/worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "ROOM", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
+  "vars": {
+    "ALLOWED_ORIGIN": "https://keubanks16.github.io"
+  }
+}

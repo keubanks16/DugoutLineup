@@ -139,14 +139,34 @@ nav button.on{color:var(--accent);background:var(--card2)}
 .sheet .opt small{color:var(--dim);font-weight:600;margin-left:6px;font-size:14px}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:12px 18px;border-radius:14px;font-weight:700;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
+.status{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--dim);padding:8px 14px 0}
+.status i{width:9px;height:9px;border-radius:50%;display:inline-block}
+.push{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:24px}
+.push-in{text-align:center;width:100%;max-width:420px;animation:pop .35s ease-out}
+@keyframes pop{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
+.push-t{font-size:40px;font-weight:900;color:#ffc83d;letter-spacing:2px}
+.push-m{font-size:22px;color:#fff;margin:10px 0 26px;line-height:1.3}
+.push-go{width:100%;min-height:110px;border-radius:26px;background:#35d07f;color:#04130a;font-size:30px;font-weight:900;box-shadow:0 0 0 0 rgba(53,208,127,.6);animation:pulse 1.4s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 22px rgba(53,208,127,0)}100%{box-shadow:0 0 0 0 rgba(53,208,127,0)}}
+.planpg{position:fixed;inset:0;z-index:9;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch;padding:calc(12px + env(safe-area-inset-top)) 12px calc(24px + env(safe-area-inset-bottom))}
+.planpg .seg button{min-height:44px}
+.posgrid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.posgrid2 label{display:flex;flex-direction:column;gap:4px;background:var(--card2);border-radius:12px;padding:8px}
+.posgrid2 label b{color:var(--accent);font-size:13px}
+.posgrid2 select{min-height:44px;padding:8px}
+.pf{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.pf label{display:flex;flex-direction:column;gap:4px}
+body.viewer .admin-only{display:none!important}
 </style>
 </head>
 <body>
 <div class="board" id="board"></div>
+<div class="status" id="status"></div>
 <main id="main"></main>
 <nav id="nav"></nav>
 <div class="toast" id="toast"></div>
 <div id="sheet"></div>
+<div id="pushov"></div>
 
 <script>
 const KEY='dugout-clipboard-v1';
@@ -159,7 +179,8 @@ function defaults(){
   const roster=Array.from({length:10},(_,i)=>({id:uid(),name:'Player '+(i+1),num:String(i+1)}));
   return {team:'My Team',age:8,of:4,roster,order:roster.map(p=>p.id),batIdx:0,
     inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},
-    fieldInning:1,light:false,tab:'game',opp:'',customLimit:0,history:[],gameStart:Date.now()};
+    fieldInning:1,light:false,tab:'game',opp:'',customLimit:0,history:[],gameStart:Date.now(),
+    innings:6,coachPitch:true,rots:[],locks:{},sitAll:{},pplan:[],noRe:true,autoPush:true,seenPush:0,_v:0};
 }
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
@@ -175,7 +196,8 @@ function archive(){if(!gameHasData())return;const g=snapshot();
   const rec={gameStart:S.gameStart,saved:Date.now(),game:g,names:Object.fromEntries(S.roster.map(p=>[p.id,p.name]))};
   if(i>=0)S.history[i]=rec;else S.history.unshift(rec);S.history=S.history.slice(0,40)}
 let saveOk=true;
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));saveOk=true}catch(e){saveOk=false}}
+function localSave(){try{localStorage.setItem(KEY,JSON.stringify(S));saveOk=true}catch(e){saveOk=false}}
+function save(){localSave();if(typeof queueUpload==='function')queueUpload()}
 
 const P=id=>S.roster.find(p=>p.id===id);
 const nm=id=>{const p=P(id);return p?p.name:'—'};
@@ -213,13 +235,247 @@ function playerOpts(extra){
   return (extra||[]).concat(S.roster.map(p=>({html:tag(p.id),v:p.id})));
 }
 
+/* ---------- Cloud sync + admin ---------- */
+const API='https://dugoutlineup.kollinmeubanks.workers.dev/api';
+const TOKKEY='dugout-admin-token';
+const SHARED=['team','age','of','roster','order','batIdx','inning','half','outs','us','them','pitches','pitcher','pen','field','opp','customLimit','history','gameStart',
+  'innings','coachPitch','rots','locks','sitAll','pplan','noRe','autoPush'];
+let token='';try{token=localStorage.getItem(TOKKEY)||''}catch(e){}
+let isAdmin=!!token, srvV=Number(S._v)||0, dirty=false, upT=null, online=null, hasAdmin=null, lastErr='';
+function sharedState(){const o={};SHARED.forEach(k=>o[k]=S[k]);return o}
+function setToken(t){token=t||'';isAdmin=!!token;try{t?localStorage.setItem(TOKKEY,t):localStorage.removeItem(TOKKEY)}catch(e){}}
+async function api(path,method,body){
+  const r=await fetch(API+path,{method:method||'GET',cache:'no-store',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
+  let j={};try{j=await r.json()}catch(e){}
+  if(r.status===401&&token&&!/^\/(login|setup|password)$/.test(path)){setToken('');toast('Signed out — sign in again');render()}
+  if(!r.ok)throw new Error(j.error||('Error '+r.status));
+  return j;
+}
+function queueUpload(){if(!isAdmin)return;dirty=true;clearTimeout(upT);upT=setTimeout(upload,600)}
+async function upload(){
+  clearTimeout(upT);if(!isAdmin)return;
+  try{const j=await api('/state','POST',{state:sharedState()});srvV=j.v;S._v=srvV;dirty=false;online=true;lastErr='';localSave()}
+  catch(e){online=false;lastErr=e.message;upT=setTimeout(upload,5000)}
+  paintStatus();
+}
+function applyRemote(st){
+  SHARED.forEach(k=>{if(st[k]!==undefined)S[k]=st[k]});
+  if(!isAdmin)S.fieldInning=S.inning;
+  localSave();
+  if(!document.querySelector('.ov')&&!isTyping())render();else renderBoard();
+}
+function isTyping(){const a=document.activeElement;return a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName)}
+async function poll(){
+  if(dirty||document.hidden)return;
+  try{
+    const j=await api('/state?v='+srvV);online=true;
+    if(j.state&&j.v!==srvV){srvV=j.v;S._v=srvV;applyRemote(j.state)}
+    else if(!j.state&&j.v===0&&isAdmin&&srvV<=0){upload()}
+    if(j.push&&j.push.id!==S.seenPush)showPush(j.push);
+  }catch(e){online=false}
+  paintStatus();
+}
+setInterval(poll,3000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll()});
+function paintStatus(){const el=document.getElementById('status');if(!el)return;
+  const dot=online===false?'var(--bad)':online?'var(--good)':'var(--dim)';
+  el.innerHTML=`<i style="background:${dot}"></i>${isAdmin?(online===false?'Admin · offline, saving on this phone':dirty?'Admin · saving…':'Admin · synced to all devices'):(online===false?'View only · offline':'View only · live')}`;
+}
+async function sendPush(msg,inning){
+  if(!isAdmin)return;
+  if(dirty)await upload();
+  try{const j=await api('/push','POST',{msg,inning});S.seenPush=j.push.id;localSave();toast('Field update sent to every device')}
+  catch(e){toast('Couldn’t send: '+e.message)}
+}
+function showPush(p){
+  S.seenPush=p.id;localSave();
+  if(Date.now()-p.id>20*60e3)return;
+  try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
+  document.getElementById('pushov').innerHTML=`<div class="push"><div class="push-in">
+    <div style="font-size:64px">📣</div>
+    <div class="push-t">FIELD UPDATE</div>
+    <div class="push-m">${esc(p.msg||'')}${p.inning?`<br><b>Inning ${p.inning}</b>`:''}</div>
+    <button class="push-go" data-act="pushGo" data-v="${p.inning||''}">SEE THE FIELD</button>
+    <button class="link" data-act="pushClose" style="font-size:17px;margin-top:14px">Dismiss</button></div></div>`;
+}
+async function checkAdmin(){try{hasAdmin=(await api('/admin')).hasAdmin}catch(e){hasAdmin=null}if(S.tab==='setup'&&!isTyping())render()}
+// Viewers can look around but not change anything.
+const VIEW_OK=new Set(['tab','goField','fInn','fsOpen','fsClose','closeSheet','light','pushGo','pushClose','adminLogin','adminSetup','showLogin']);
+
+/* ---------- Substitution plan (from The Sports Hub) ---------- */
+const INF=new Set(['P','C','1B','2B','3B','SS']);
+const BENCH_WHY=[['practice','Missed practice'],['coach','Coach’s decision'],['other','Other']];
+const planPool=()=>{const o=S.order.filter(id=>P(id));return o.length?o:S.roster.map(p=>p.id)};
+const isSwap=r=>r&&r.kind==='swap';
+const planRots=()=>(Array.isArray(S.rots)?S.rots:[]).filter(r=>r&&r.pos&&r.a&&(isSwap(r)?Array.isArray(r.inns)&&r.inns.length&&r.sub!==r.a:r.b&&r.a!==r.b&&r.c!==r.a&&r.c!==r.b));
+const rotIds=r=>isSwap(r)?[r.a].concat(r.sub?[r.sub]:[]):[r.a,r.b].concat(r.c?[r.c]:[]);
+const rotTurn=(r,i)=>{if(isSwap(r))return r.inns.includes(i+1)?{on:r.sub||'',off:[r.a],keepOff:r.a}:{on:r.a,off:[]};
+  const ids=rotIds(r),on=ids[i%ids.length];return {on,off:ids.filter(x=>x!==on)}};
+const innList=ns=>{const a=ns.slice().sort((x,y)=>x-y);return (a.length===1?'inning ':'innings ')+a.join(', ')};
+const sitAllOf=()=>S.sitAll&&typeof S.sitAll==='object'?S.sitAll:{};
+const pplanOf=()=>(Array.isArray(S.pplan)?S.pplan:[]).filter(x=>x&&x.id&&P(x.id));
+function pplanInnings(){const out=[];for(const x of pplanOf())for(let k=0;k<Math.max(1,Number(x.n)||1);k++)out.push(x.id);return Array.from({length:S.innings||6},(_,i)=>out[i]||'')}
+function lockOf(){
+  const pool=planPool(),why=sitAllOf(),POS=positions(),out={},rots=planRots(),rp=new Set(rots.map(r=>r.pos)),rk=new Set(rots.flatMap(rotIds));
+  for(const [pos,id] of Object.entries(S.locks||{}))if(POS.includes(pos)&&pool.includes(id)&&!why[id]&&!rp.has(pos)&&!rk.has(id)&&!Object.values(out).includes(id))out[pos]=id;
+  return out;
+}
+// Bench share in saved games, so the same kids don't keep sitting.
+function seasonBench(){const t={};
+  for(const h of S.history||[]){const f=(h.game||{}).field||{},ids=Object.keys(h.names||{});
+    for(const k of Object.keys(f)){if(!Object.keys(f[k]).length)continue;const on=new Set(Object.values(f[k]));
+      for(const id of ids){const r=t[id]||(t[id]={b:0,n:0});r.n++;if(!on.has(id))r.b++}}}
+  const out={};for(const [id,r] of Object.entries(t))out[id]=r.n?r.b/r.n:0;return out}
+function autoPlan(seed){
+  const pool=planPool(),POS=positions(),inns=S.innings||6,kid=!S.coachPitch,why=sitAllOf();
+  const allOut=new Set(Object.keys(why).filter(id=>pool.includes(id)));
+  const locks=Object.fromEntries(Object.entries(lockOf()).filter(([pos])=>!(pos==='P'&&kid&&pplanOf().length)));
+  const rots=planRots().filter(r=>POS.includes(r.pos)&&rotIds(r).every(id=>pool.includes(id)&&!allOut.has(id))).sort((x,y)=>(isSwap(y)?0:1)-(isSwap(x)?0:1));
+  const season=seasonBench(),sd=Number(seed)||0;
+  const c={};pool.forEach(id=>c[id]={bench:0,pos:{},inf:0,of:0});
+  const plan=[];let lastBench=new Set(),lastPos={};
+  const pp=pplanInnings(),pOut=new Set(),canP=id=>!pOut.has(id);
+  for(let i=0;i<inns;i++){
+    const row={},sits=new Set();let avail=pool.filter(id=>!allOut.has(id));
+    if(kid){
+      const prev=(plan[i-1]||{}).P;
+      let keep=pp[i]||(pp.some(Boolean)?'':(i===0?(S.field[1]||{}).P||S.pitcher:prev));
+      if(keep&&!pp[i]&&!canP(keep))keep='';
+      if(!keep&&!pp[i]&&locks.P&&avail.includes(locks.P))keep=locks.P;
+      if(keep&&avail.includes(keep)){row.P=keep;avail=avail.filter(x=>x!==keep)}
+      if(prev&&row.P&&row.P!==prev&&S.noRe)pOut.add(prev);
+    }
+    const noPos={};
+    for(const r of rots){const {on,off,keepOff}=rotTurn(r,i);if(keepOff)noPos[r.pos]=keepOff;
+      if(on&&!row[r.pos]&&avail.includes(on)){row[r.pos]=on;avail=avail.filter(x=>x!==on)}
+      if(r.sit)for(const o of off)if(avail.includes(o)){sits.add(o);avail=avail.filter(x=>x!==o)}}
+    for(const [pos,id] of Object.entries(locks))if(!row[pos]&&avail.includes(id)){row[pos]=id;avail=avail.filter(x=>x!==id)}
+    const open=POS.filter(p=>!row[p]),benchN=Math.max(0,avail.length-open.length);
+    const rot=id=>(pool.indexOf(id)-i+sd*3+pool.length*10)%pool.length;
+    const bench=new Set(avail.slice().sort((a,b)=>(c[a].bench-c[b].bench)||((lastBench.has(a)?1:0)-(lastBench.has(b)?1:0))||((season[a]||0)-(season[b]||0))||(rot(a)-rot(b))).slice(0,benchN));
+    sits.forEach(id=>bench.add(id));allOut.forEach(id=>bench.add(id));
+    let field=avail.filter(x=>!bench.has(x));
+    for(const pos of open){if(!field.length)break;
+      const cost=id=>(c[id].pos[pos]||0)*4+(lastPos[id]===pos?6:0)+(INF.has(pos)?c[id].inf:c[id].of)*2+rot(id)/100;
+      const id=field.filter(x=>x!==noPos[pos]).sort((a,b)=>cost(a)-cost(b))[0];if(!id)continue;
+      row[pos]=id;field=field.filter(x=>x!==id)}
+    for(const pos of POS){if(row[pos])continue;
+      const id=[...sits].filter(x=>x!==noPos[pos]&&!Object.values(noPos).includes(x)).sort((a,b)=>c[b].bench-c[a].bench)[0];
+      if(id){row[pos]=id;sits.delete(id);bench.delete(id)}}
+    lastPos={};
+    for(const [pos,id] of Object.entries(row)){if(!c[id])continue;c[id].pos[pos]=(c[id].pos[pos]||0)+1;c[id][INF.has(pos)?'inf':'of']++;lastPos[id]=pos}
+    bench.forEach(id=>{if(c[id])c[id].bench++});lastBench=bench;plan.push(row);
+  }
+  return plan;
+}
+function curPlan(){return Array.from({length:S.innings||6},(_,i)=>S.field[i+1]||{})}
+function planFlags(plan){
+  const pool=planPool(),n=Math.min(plan.length,S.innings||6);if(!n||!plan.some(r=>Object.keys(r).length))return [];
+  const flags=[],benchN={},why=sitAllOf(),locked=new Set(Object.values(lockOf()));
+  const rotSit={};for(const r of planRots())if(r.sit&&!isSwap(r))for(const id of rotIds(r))rotSit[id]=rotIds(r).length-1;
+  for(const id of pool){if(why[id])continue;let b=0,run=0,maxRun=0,inf=0;
+    for(let i=0;i<n;i++){const pos=Object.keys(plan[i]||{}).find(k=>plan[i][k]===id);if(!pos){b++;run++;maxRun=Math.max(maxRun,run)}else{run=0;if(INF.has(pos))inf++}}
+    const name=nm(id);
+    if(b===n&&n>=2){flags.push(`${name} sits the whole game. Add a reason under Sitting all game.`);continue}
+    if(rotSit[id]==null&&!locked.has(id))benchN[id]=b;
+    if(maxRun>=2&&maxRun>(rotSit[id]||0))flags.push(`${name} sits ${maxRun} innings in a row.`);
+    if(n>=3&&!inf&&b<n&&!locked.has(id))flags.push(`${name} never plays the infield.`)}
+  const vals=Object.values(benchN);
+  if(vals.length&&Math.max(...vals)-Math.min(...vals)>1)flags.push(`Bench time is uneven: from ${Math.min(...vals)} to ${Math.max(...vals)} innings.`);
+  const empty=[];for(let i=0;i<n;i++){if(positions().some(p=>!(plan[i]||{})[p])&&pool.length>=positions().length)empty.push(i+1)}
+  if(empty.length)flags.push(`Open positions in inning${empty.length===1?'':'s'} ${empty.join(', ')}.`);
+  if(!S.coachPitch&&S.noRe){const seq=[];for(let i=0;i<n;i++){const p=(plan[i]||{}).P;if(p&&seq[seq.length-1]!==p)seq.push(p)}
+    const seen=new Set();for(const p of seq){if(seen.has(p)){flags.push(`${nm(p)} pitches, comes out, then pitches again. Your rules don’t allow that.`);break}seen.add(p)}}
+  return flags;
+}
+function totalsHTML(plan){
+  const n=Math.min(plan.length,S.innings||6),pool=planPool(),season=seasonBench();
+  const rows=pool.map(id=>{let f=0,b=0,inf=0,of=0;for(let i=0;i<n;i++){const pos=Object.keys(plan[i]||{}).find(k=>plan[i][k]===id);if(!pos)b++;else{f++;INF.has(pos)?inf++:of++}}return {id,f,b,inf,of}}).sort((a,b)=>b.b-a.b);
+  return `<table><tr><th>Player</th><th class="c">Field</th><th class="c">Bench</th><th class="c">IF</th><th class="c">OF</th><th class="c">Past</th></tr>${rows.map(r=>`<tr><td>${esc(nm(r.id))}</td><td class="c">${r.f}</td><td class="c">${r.b}</td><td class="c">${r.inf}</td><td class="c">${r.of}</td><td class="c">${season[r.id]!=null?Math.round(season[r.id]*100)+'%':'–'}</td></tr>`).join('')}</table>`;
+}
+let planOpen=false,planPrev=null,planSeed=0,PF={type:'turns',pos:'',a:'',b:'',c:'',sit:'sit',inns:[],sub:'',err:'',sitId:'',sitR:'practice',sitNote:''};
+function selHTML(key,val,opts,attr){return `<select ${attr||`data-pf="${key}"`}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(val)?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
+function vPlan(){
+  const pool=planPool(),POS=positions(),opts=[['','—']].concat(pool.map(id=>[id,nm(id)]));
+  const segBtns=(act,cur,list)=>`<div class="seg">${list.map(([v,l])=>`<button class="${String(cur)===String(v)?'on':''}" data-act="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  let body;
+  if(planPrev){
+    const flags=planFlags(planPrev);
+    body=`<div class="card"><div class="lbl">Suggested defense</div>${planPrev.map((row,i)=>{const on=new Set(Object.values(row));const out=pool.filter(id=>!on.has(id));
+      return `<div class="li" style="display:block;padding:10px 0"><b style="font-size:17px">Inning ${i+1}</b><div class="pmeta" style="color:var(--text)">${POS.filter(p=>row[p]).map(p=>`<b style="color:var(--accent)">${p}</b> ${esc(nm(row[p]))}`).join(' · ')}</div><div class="pmeta">Sits: ${out.length?out.map(id=>esc(nm(id))).join(', '):'nobody'}</div></div>`}).join('')}</div>
+      <div class="card"><div class="lbl">Playing time this game</div>${totalsHTML(planPrev)}</div>
+      <div class="card">${flags.length?`<div class="lbl">Check before you use it</div>${flags.map(f=>`<div class="pmeta" style="color:var(--warn)">• ${esc(f)}</div>`).join('')}`:'<div class="pmeta" style="color:var(--good)">Playing time is even.</div>'}</div>
+      <div class="row" style="flex-wrap:wrap;margin-bottom:20px"><button class="btn primary" data-act="planUse">Use this plan</button><button class="btn" data-act="planAgain">Try another</button><button class="btn sm" data-act="planBack">Back</button></div>`;
+  }else{
+    const rots=planRots(),L=lockOf(),rotPos=new Set(rots.map(r=>r.pos)),rk=new Set(rots.flatMap(rotIds)),why=sitAllOf(),kid=!S.coachPitch,hasPP=kid&&pplanOf().length;
+    const lockPool=pool.filter(id=>!why[id]&&!rk.has(id));
+    const innChips=Array.from({length:S.innings||6},(_,i)=>i+1).map(k=>`<button class="${PF.inns.includes(k)?'on':''}" data-act="pfInn" data-v="${k}">${k}</button>`).join('');
+    const flags=planFlags(curPlan());const planned=curPlan().some(r=>Object.keys(r).length);
+    body=`
+    <div class="card"><div class="lbl">Game</div>
+      <div class="pmeta" style="margin-bottom:8px">Uses the ${pool.length} players in your batting order.</div>
+      <div class="lbl">Innings</div>${segBtns('planInn',S.innings||6,[[4,'4'],[5,'5'],[6,'6'],[7,'7']])}
+      <div class="lbl" style="margin-top:12px">Pitching</div>${segBtns('planPitch',S.coachPitch?'coach':'kid',[['coach','Coach pitch'],['kid','Kid pitch']])}
+    </div>
+    ${kid?`<div class="card"><div class="lbl">Pitching plan <span>Who pitches, in order</span></div>
+      ${pplanOf().map((x,i)=>`<div class="li"><div class="o">${i+1}</div><div style="flex:1">${selHTML('',x.id,pool.map(id=>[id,nm(id)]),`data-pp="${i}"`)}</div>
+        <button class="ib" data-act="ppN" data-v="${i}" data-d="-1">−</button><div style="min-width:54px;text-align:center;font-weight:800">${x.n} inn</div><button class="ib" data-act="ppN" data-v="${i}" data-d="1">+</button><button class="ib" data-act="ppDel" data-v="${i}" style="color:var(--bad)">✕</button></div>`).join('')||'<div class="empty">No pitching plan. Auto-fill keeps your current pitcher.</div>'}
+      <button class="btn sm" data-act="ppAdd" style="width:100%;margin-top:8px">+ Add pitcher</button>
+      <div class="lbl" style="margin-top:12px">Pitcher taken out</div>${segBtns('planNoRe',S.noRe?'y':'n',[['y','Can’t pitch again'],['n','Can come back']])}
+    </div>`:''}
+    <div class="card"><div class="lbl">Locked spots <span>Same player all game</span></div>
+      <div class="pmeta" style="margin-bottom:8px">Lock a player to a position, or leave it on Rotate. Fair auto-fill only moves kids through the Rotate spots.</div>
+      <div class="posgrid2">${POS.map(pos=>{
+        if(pos==='P'&&hasPP)return `<label><b>P</b><span class="pmeta">Pitching plan</span></label>`;
+        if(rotPos.has(pos))return `<label><b>${pos}</b><span class="pmeta">Rotation</span></label>`;
+        const taken=new Set(Object.entries(L).filter(([k])=>k!==pos).map(([,v])=>v));
+        return `<label><b>${pos}</b>${selHTML('',L[pos]||'',[['',pos==='P'&&kid?'Auto':'Rotate']].concat(lockPool.filter(id=>!taken.has(id)).map(id=>[id,nm(id)])),`data-lock="${pos}"`)}</label>`}).join('')}</div>
+      ${Object.keys(L).length?`<button class="btn sm" data-act="lockNone" style="width:100%;margin-top:8px">Rotate all</button>`:''}
+    </div>
+    <div class="card"><div class="lbl">Rotations</div>
+      ${rots.length?rots.map((r,i)=>`<div class="li"><div class="nm" style="white-space:normal;font-size:16px">${isSwap(r)?`${esc(nm(r.a))} out at <b>${r.pos}</b> in ${innList(r.inns)}${r.sub?' · '+esc(nm(r.sub))+' goes in':' · whoever needs time goes in'}`:`${rotIds(r).map(id=>esc(nm(id))).join(r.c?', ':' ↔ ')} take turns at <b>${r.pos}</b>${r.sit?' · the others sit':''}`}</div><button class="ib" data-act="rotDel" data-v="${i}" style="color:var(--bad)">✕</button></div>`).join(''):'<div class="pmeta">Two or three players share a spot and take turns, like #1 and #2 in RC. Or take a starter out for certain innings.</div>'}
+      <div style="margin-top:10px">${segBtns('pfType',PF.type,[['turns','Take turns'],['swap','Out for innings']])}</div>
+      <div class="pf">
+        <label><span class="pmeta">Position</span>${selHTML('pos',PF.pos||POS[POS.length-1],POS.map(p=>[p,p]))}</label>
+        ${PF.type==='turns'?`
+        <label><span class="pmeta">Player 1 · innings ${PF.c?'1, 4, 7':'1, 3, 5'}</span>${selHTML('a',PF.a,opts)}</label>
+        <label><span class="pmeta">Player 2 · innings ${PF.c?'2, 5':'2, 4, 6'}</span>${selHTML('b',PF.b,opts)}</label>
+        <label><span class="pmeta">Player 3 (optional) · innings 3, 6</span>${selHTML('c',PF.c,[['','None']].concat(opts.slice(1)))}</label>
+        <label><span class="pmeta">The others</span>${segBtns('pfSit',PF.sit,[['sit','Sit'],['play','Play elsewhere']])}</label>`:`
+        <label><span class="pmeta">Starter</span>${selHTML('a',PF.a,opts)}</label>
+        <div><span class="pmeta">Out in innings</span><div class="seg">${innChips}</div></div>
+        <label><span class="pmeta">Goes in</span>${selHTML('sub',PF.sub,[['','Whoever needs time']].concat(opts.slice(1)))}</label>`}
+        ${PF.err?`<div class="pmeta" style="color:var(--bad)">${esc(PF.err)}</div>`:''}
+        <button class="btn sm" data-act="rotAdd" style="width:100%">+ Add rotation</button>
+      </div>
+    </div>
+    <div class="card"><div class="lbl">Sitting all game</div>
+      ${Object.entries(why).filter(([id])=>P(id)).map(([id,w])=>`<div class="li"><div class="nm" style="font-size:16px">${esc(nm(id))} <small style="color:var(--dim)">· ${esc(w.r==='other'?(w.note||'Other'):(BENCH_WHY.find(b=>b[0]===w.r)||[])[1]||'')}</small></div><button class="ib" data-act="sitDel" data-v="${id}" style="color:var(--bad)">✕</button></div>`).join('')||'<div class="pmeta">Nobody. Kids listed here stay on the bench and don’t count against fair time.</div>'}
+      <div class="pf"><div class="field2" style="grid-template-columns:1fr 1fr">${selHTML('sitId',PF.sitId,opts.filter(o=>!why[o[0]]))}${selHTML('sitR',PF.sitR,BENCH_WHY)}</div>
+      ${PF.sitR==='other'?`<input data-pfi="sitNote" value="${esc(PF.sitNote)}" placeholder="Reason">`:''}
+      <button class="btn sm" data-act="sitAdd" style="width:100%">+ Add</button></div>
+    </div>
+    <button class="btn primary" data-act="planAuto" style="width:100%;margin-bottom:6px">Fair auto-fill${Object.keys(L).length?' (keeps locked spots)':rots.length?' (keeps rotations)':''}</button>
+    <div class="pmeta" style="margin-bottom:12px">Spreads bench and infield time evenly${(S.history||[]).length?', giving more field time to kids who sat more in saved games':''}. You see the plan before it’s used.</div>
+    ${planned?`<div class="card"><div class="lbl">Playing time this game</div>${totalsHTML(curPlan())}
+      ${flags.length?`<div class="lbl" style="margin-top:10px">Check playing time</div>${flags.map(f=>`<div class="pmeta" style="color:var(--warn)">• ${esc(f)}</div>`).join('')}`:'<div class="pmeta" style="color:var(--good);margin-top:8px">Playing time looks even.</div>'}</div>`:''}
+    <label class="card" style="display:flex;align-items:center;gap:12px"><input type="checkbox" data-pfc="autoPush" ${S.autoPush?'checked':''} style="width:28px;min-height:28px;flex:0 0 auto"><span><b>Auto-send field updates</b><br><span class="pmeta">When the inning changes, every device gets the Field Update pop-up with the planned positions.</span></span></label>`;
+  }
+  return `<div class="planpg"><div class="fs-head" style="margin-bottom:10px"><div class="t" style="text-align:left">Substitution plan</div><button class="btn sm primary" data-act="planClose">Done</button></div>${body}</div>`;
+}
+
 /* ---------- Render ---------- */
 function render(){
   document.body.classList.toggle('light',!!S.light);
   renderBoard();
   const m=document.getElementById('main');
-  m.innerHTML={game:vGame,lineup:vLineup,field:vField,setup:vSetup}[S.tab]()+(S.full?vFull():'');
-  document.body.style.overflow=S.full?'hidden':'';
+  document.body.classList.toggle('viewer',!isAdmin);
+  const ps=document.querySelector('.planpg'),pst=ps?ps.scrollTop:0;
+  if(!isAdmin)planOpen=false;
+  m.innerHTML={game:vGame,lineup:vLineup,field:vField,setup:vSetup}[S.tab]()+(S.full?vFull():'')+(planOpen?vPlan():'');
+  const ps2=document.querySelector('.planpg');if(ps2)ps2.scrollTop=pst;
+  paintStatus();
+  document.body.style.overflow=(S.full||planOpen)?'hidden':'';
   const tabs=[['game','⚾','Game'],['lineup','📋','Lineup'],['field','🧢','Field'],['setup','⚙️','Setup']];
   document.getElementById('nav').innerHTML=tabs.map(t=>`<button class="${S.tab===t[0]?'on':''}" data-act="tab" data-v="${t[0]}"><i>${t[1]}</i>${t[2]}</button>`).join('');
   tick();
@@ -257,9 +513,9 @@ const FIELD_SVG=`<svg viewBox="0 0 100 104" preserveAspectRatio="none" aria-hidd
   <path d="M48.6,90.2 h2.8 v1.3 l-1.4,1.2 l-1.4,-1.2 Z" fill="#fff"/>
   <defs><pattern id="stripes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="#fff"/></pattern></defs>
 </svg>`;
-function fieldView(inn,interactive,small){
+function fieldView(inn,interactive,small,nolink){interactive=interactive&&isAdmin;
   const f=S.field[inn]||{};
-  return `<div class="diamond ${small?'small':''}" ${interactive?'':'data-act="goField"'}>${FIELD_SVG}
+  return `<div class="diamond ${small?'small':''}" ${interactive||nolink?'':'data-act="goField"'}>${FIELD_SVG}
   ${positions().map(ps=>{const c=(S.of===4&&COORD4[ps])||COORD[ps];const id=f[ps];
     const t=interactive?`button data-act="setPos" data-v="${ps}"`:'div';
     return `<${t} class="fp ${id?'':'open'}" style="left:${c[0]}%;top:${c[1]}%"><small>${ps}</small><span>${id?esc(nm(id)):(interactive?'+ Set':'—')}</span></${interactive?'button':'div'}>`}).join('')}
@@ -274,11 +530,11 @@ function vGame(){
     const i=((S.batIdx%n)+n)%n, a=o[i], b=o[(i+1)%n], c=o[(i+2)%n], p=P(a);
     bat=`<div class="big-name">${p&&p.num?`<span class="n">#${esc(p.num)}</span>`:''}${esc(nm(a))}</div>
     <div class="queue"><div><small>ON DECK</small>${tag(b)}</div><div><small>IN THE HOLE</small>${tag(c)}</div></div>
-    <div class="row"><button class="btn sm" data-act="bat" data-v="-1" style="min-width:84px">‹ Back</button><button class="btn primary" data-act="bat" data-v="1">Next batter ›</button></div>`;
+    <div class="row admin-only"><button class="btn sm" data-act="bat" data-v="-1" style="min-width:84px">‹ Back</button><button class="btn primary" data-act="bat" data-v="1">Next batter ›</button></div>`;
   }
   // Pitcher
   let pit;
-  if(!S.pitcher){pit=`<div class="empty">No pitcher selected.</div><button class="btn" data-act="choosePitcher">Choose pitcher</button>`}
+  if(!S.pitcher){pit=`<div class="empty">No pitcher selected.</div><button class="btn admin-only" data-act="choosePitcher">Choose pitcher</button>`}
   else{
     const c=S.pitches[S.pitcher]||0, L=limit(), pct=Math.min(100,c/L*100);
     const col=pct>=100?'var(--bad)':pct>=80?'var(--warn)':'var(--good)';
@@ -288,7 +544,7 @@ function vGame(){
       <button class="count" data-act="editCount" data-v="${S.pitcher}" style="color:${col};background:none;padding:0" aria-label="Edit pitch count">${c}<small style="font-size:16px;color:var(--dim);margin-left:6px">✎</small></button>
       <div class="meter"><i style="width:${pct}%;background:${col}"></i></div>
       <div class="pmeta">Limit ${L} ${S.customLimit>0?'(custom)':'(age '+S.age+')'} · ${pct>=100?'<b style="color:var(--bad)">AT LIMIT</b>':(L-c)+' left'}<br>Rest if pulled now: <b style="color:var(--text)">${r} day${r===1?'':'s'}</b></div>
-    </div><div>
+    </div><div class="admin-only">
       <button class="plus" data-act="pitch" data-v="1">+1</button>
       <button class="minus" data-act="pitch" data-v="-1">−1 undo</button>
     </div></div>`;
@@ -296,14 +552,14 @@ function vGame(){
   const used=Object.entries(S.pitches).filter(([id,n])=>P(id)&&(n>0||id===S.pitcher));
   if(used.length)pit+=`<div class="lbl" style="margin-top:14px">Pitch counts this game <span>Tap to change</span></div><div class="mini bench">${used.map(([id,n])=>`<button data-act="editCount" data-v="${id}">${esc(nm(id))}: <b style="color:${n>=limit()?'var(--bad)':'var(--text)'}">${n}</b></button>`).join('')}</div>`;
   // Bullpen
-  const pen=S.pen.length?`<div class="chips">${S.pen.map(w=>`<div class="chip"><div class="nm">${tag(w.id)}</div><div class="tm" data-start="${w.start}">0:00</div><button class="go" data-act="penIn" data-v="${w.id}">Put in</button><button data-act="penOut" data-v="${w.id}" aria-label="Stop warming">✕</button></div>`).join('')}</div>`:`<div class="empty">Nobody warming up.</div>`;
+  const pen=S.pen.length?`<div class="chips">${S.pen.map(w=>`<div class="chip"><div class="nm">${tag(w.id)}</div><div class="tm" data-start="${w.start}">0:00</div><button class="go admin-only" data-act="penIn" data-v="${w.id}">Put in</button><button class="admin-only" data-act="penOut" data-v="${w.id}" aria-label="Stop warming">✕</button></div>`).join('')}</div>`:`<div class="empty">Nobody warming up.</div>`;
   // Field now
   const f=S.field[S.inning]||{};
   return `
   <div class="card"><div class="lbl">Now batting <span>${n?((((S.batIdx%n)+n)%n)+1)+' of '+n:''}</span></div>${bat}</div>
   <div class="card"><div class="lbl">Pitcher</div>${pit}</div>
-  <div class="card"><div class="lbl">Warming up <button class="link" data-act="penAdd">+ Add</button></div>${pen}</div>
-  <div class="card"><div class="lbl">Defense · inning ${S.inning} <span><button class="link" data-act="fsOpen" data-v="now" style="margin-right:14px">⛶ Full screen</button><button class="link" data-act="goField">Edit</button></span></div>${fieldView(S.inning,false,true)}</div>`;
+  <div class="card"><div class="lbl">Warming up <button class="link admin-only" data-act="penAdd">+ Add</button></div>${pen}</div>
+  <div class="card"><div class="lbl">Defense · inning ${S.inning} <span><button class="link" data-act="fsOpen" data-v="now" style="margin-right:14px">⛶ Full screen</button><button class="link admin-only" data-act="pushField" data-v="now" style="margin-right:14px">📣 Send</button><button class="link" data-act="goField">${isAdmin?'Edit':'Open'}</button></span></div>${fieldView(S.inning,false,true)}</div>`;
 }
 
 function vFull(){
@@ -314,10 +570,11 @@ function vFull(){
       <button class="ib" data-act="fInn" data-v="-1" aria-label="Previous inning">‹</button>
       <div class="t">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
       <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
+      <button class="ib admin-only" data-act="pushField" aria-label="Send field update" style="margin-left:6px">📣</button>
       <button class="ib" data-act="fsClose" aria-label="Exit full screen" style="margin-left:6px">✕</button>
     </div>
-    <div class="fs-body">${fieldView(inn,true)}</div>
-    <div class="fs-side"><div class="lbl" style="margin:0">Bench (${bench.length}) <span>Tap a name to put them in</span></div>
+    <div class="fs-body">${fieldView(inn,true,false,true)}</div>
+    <div class="fs-side"><div class="lbl" style="margin:0">Bench (${bench.length}) <span class="admin-only">Tap a name to put them in</span></div>
     <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div></div>
   </div>`;
 }
@@ -327,13 +584,13 @@ function vLineup(){
   const rows=S.order.map((id,i)=>`<div class="li ${i===cur?'cur':''}">
     <div class="o">${i+1}</div>
     <button class="nm" data-act="setBat" data-v="${i}">${tag(id)}${i===cur?' <small style="color:var(--accent)">· AT BAT</small>':''}</button>
-    <button class="ib" data-act="mv" data-v="${i}" data-d="-1" aria-label="Move up">▲</button>
-    <button class="ib" data-act="mv" data-v="${i}" data-d="1" aria-label="Move down">▼</button>
-    <button class="ib" data-act="unorder" data-v="${i}" aria-label="Remove from order" style="color:var(--bad)">✕</button>
+    <button class="ib admin-only" data-act="mv" data-v="${i}" data-d="-1" aria-label="Move up">▲</button>
+    <button class="ib admin-only" data-act="mv" data-v="${i}" data-d="1" aria-label="Move down">▼</button>
+    <button class="ib admin-only" data-act="unorder" data-v="${i}" aria-label="Remove from order" style="color:var(--bad)">✕</button>
   </div>`).join('');
   const out=S.roster.filter(p=>!S.order.includes(p.id));
   return `<div class="card"><div class="lbl">Batting order <span>Tap a name to set who's up</span></div>${rows||'<div class="empty">Empty — add players below.</div>'}</div>
-  ${out.length?`<div class="card"><div class="lbl">Not in order</div>${out.map(p=>`<div class="li"><div class="nm">${tag(p.id)}</div><button class="btn sm" data-act="order" data-v="${p.id}">+ Add</button></div>`).join('')}</div>`:''}`;
+  ${out.length&&isAdmin?`<div class="card"><div class="lbl">Not in order</div>${out.map(p=>`<div class="li"><div class="nm">${tag(p.id)}</div><button class="btn sm" data-act="order" data-v="${p.id}">+ Add</button></div>`).join('')}</div>`:''}`;
 }
 
 function vField(){
@@ -358,17 +615,34 @@ function vField(){
       <div style="flex:1;text-align:center;font-size:22px;font-weight:800">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
       <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
     </div>
-    <button class="btn sm" data-act="fsOpen" style="width:100%;margin-bottom:10px">⛶ Full screen</button>${fieldView(inn,true)}
-    <div class="lbl" style="margin-top:14px">Bench (${bench.length}) <span>Tap a name to put them in</span></div>
+    <div class="row" style="margin-bottom:10px"><button class="btn sm" data-act="fsOpen" style="flex:1">⛶ Full screen</button><button class="btn sm primary admin-only" data-act="pushField" style="flex:1">📣 Send update</button></div>${fieldView(inn,true)}
+    <div class="lbl" style="margin-top:14px">Bench (${bench.length}) <span class="admin-only">Tap a name to put them in</span></div>
     <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div>
-    <div class="row" style="margin-top:12px"><button class="btn sm" style="flex:1" data-act="copyInn">Copy inning ${inn-1>0?inn-1:''}</button><button class="btn sm danger" style="flex:1" data-act="clearInn">Clear</button></div>
+    <div class="row admin-only" style="margin-top:12px"><button class="btn sm" style="flex:1" data-act="copyInn">Copy inning ${inn-1>0?inn-1:''}</button><button class="btn sm danger" style="flex:1" data-act="clearInn">Clear</button></div>
+    <button class="btn primary admin-only" data-act="planOpen" style="width:100%;margin-top:10px">🧠 Substitution plan</button>
   </div>
   <div class="card"><div class="lbl">Playing time</div>${table}</div>`;
 }
 
+function adminCard(){
+  if(isAdmin)return `<div class="card"><div class="lbl">Coach admin <span style="color:var(--good)">✓ Signed in</span></div>
+    <div class="pmeta" style="margin-bottom:10px">Your changes save to the cloud and show up on every phone that opens this app. Other phones are view only.</div>
+    <div class="row" style="margin-bottom:10px"><button class="btn sm" style="flex:1" data-act="pushField" data-v="now">📣 Send field update</button><button class="btn sm" style="flex:1" data-act="copyLink">Copy app link</button></div>
+    <div class="row"><button class="btn sm" style="flex:1" data-act="showPw">Change password</button><button class="btn sm danger" style="flex:1" data-act="adminLogout">Sign out</button></div>
+    <div id="pwBox"></div></div>`;
+  if(hasAdmin===null)checkAdmin();
+  const setup=hasAdmin===false;
+  return `<div class="card"><div class="lbl">Coach admin</div>
+    <div class="pmeta" style="margin-bottom:10px">${setup?'Create the admin password. Only phones signed in with it can change the lineup; everyone else sees it live, view only.':'This phone is view only. Sign in to make changes.'}</div>
+    <input id="admPw" type="password" placeholder="${setup?'New admin password (6+ characters)':'Admin password'}" autocomplete="${setup?'new-password':'current-password'}" style="margin-bottom:10px">
+    <button class="btn primary" style="width:100%" data-act="${setup?'adminSetup':'adminLogin'}">${setup?'Create admin password':'Sign in as admin'}</button>
+    ${hasAdmin===null?'<div class="pmeta" style="margin-top:8px">Connecting…</div>':''}</div>`;
+}
 function vSetup(){
   const ages=[7,8,9,10,11,12,13,14,15,16,17,18];
-  return `<div class="card"><div class="lbl">Team</div>
+  if(!isAdmin)return adminCard()+`<div class="card"><div class="lbl">Display</div>
+    <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div></div>`;
+  return adminCard()+`<div class="card"><div class="lbl">Team</div>
     <input id="team" value="${esc(S.team)}" data-change="team" placeholder="Team name">
   </div>
   <div class="card"><div class="lbl">Display</div>
@@ -392,7 +666,7 @@ function vSetup(){
     <input data-change="opp" value="${esc(S.opp)}" placeholder="Opponent (optional)" style="margin-bottom:10px">
     <button class="btn" data-act="saveGame" style="width:100%;margin-bottom:10px">💾 Save game to history</button>
     <button class="btn danger" data-act="newGame" style="width:100%">Start new game</button>
-    <div class="pmeta" style="margin-top:8px">Everything saves on this phone as you tap. Starting a new game files the current one under Saved games first.</div>
+    <div class="pmeta" style="margin-top:8px">Everything saves to the cloud and this phone as you tap. Starting a new game files the current one under Saved games first.</div>
   </div>
   <div class="card"><div class="lbl">Saved games (${S.history.length})</div>
     ${S.history.length?S.history.map((h,i)=>{const g=h.game,d=new Date(h.gameStart);return `<div class="li"><div class="nm" style="white-space:normal">${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${g.opp?'vs '+esc(g.opp):''}<br><small style="color:var(--dim);font-weight:600">Us ${g.us} – ${g.them} Them · ${g.half==='top'?'Top':'Bot'} ${g.inning}</small></div><button class="btn sm" data-act="loadGame" data-v="${i}">Open</button><button class="ib" data-act="delGame" data-v="${i}" style="color:var(--bad)" aria-label="Delete saved game">✕</button></div>`}).join(''):'<div class="empty">No saved games yet.</div>'}
@@ -413,7 +687,8 @@ setInterval(tick,1000);
 function advanceHalf(d){
   if(d>0){if(S.half==='top')S.half='bot';else{S.half='top';S.inning++}}
   else{if(S.half==='bot')S.half='top';else if(S.inning>1){S.half='bot';S.inning--}}
-  S.outs=0;S.fieldInning=S.inning;
+  const before=S.fieldInning;S.outs=0;S.fieldInning=S.inning;
+  if(d>0&&S.inning!==before&&S.autoPush&&isAdmin&&Object.keys(S.field[S.inning]||{}).length)setTimeout(()=>sendPush('Inning '+S.inning+' defense',S.inning),50);
 }
 const A={
   tab:v=>{S.tab=v;window.scrollTo(0,0)},
@@ -471,6 +746,43 @@ const A={
   doRestore:()=>{try{const d=JSON.parse(decodeURIComponent(escape(atob(document.getElementById('restoreIn').value.trim()))));if(!d.roster)throw 0;S={...defaults(),...d};toast('Backup restored')}catch(e){toast('That code didn’t work');return 'norender'}},
   newGame:()=>confirmBox('Start a new game?','Clear game & start new',()=>{archive();Object.assign(S,{gameStart:Date.now(),opp:'',batIdx:0,inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},fieldInning:1,tab:'game'});toast('New game ready')}),
   closeSheet:()=>{closeSheet();return 'norender'},
+  pushField:v=>{const inn=v==='now'?S.inning:S.fieldInning;sendPush('Inning '+inn+' defense',inn);return 'norender'},
+  pushGo:v=>{document.getElementById('pushov').innerHTML='';S.fieldInning=Number(v)||S.inning;S.full=true;planOpen=false;closeSheet()},
+  pushClose:()=>{document.getElementById('pushov').innerHTML='';return 'norender'},
+  adminSetup:async()=>{const pw=document.getElementById('admPw').value;if(pw.length<6){toast('Use at least 6 characters');return 'norender'}
+    try{const j=await api('/setup','POST',{password:pw});setToken(j.token);hasAdmin=true;await upload();toast('Admin password created');render()}catch(e){toast(e.message)}return 'norender'},
+  adminLogin:async()=>{const pw=document.getElementById('admPw').value;if(!pw){toast('Enter the password');return 'norender'}
+    try{const j=await api('/login','POST',{password:pw});setToken(j.token);srvV=-1;await poll();toast('Signed in as admin');render()}catch(e){toast(e.message)}return 'norender'},
+  adminLogout:()=>{confirmBox('Sign out? This phone becomes view only.','Sign out',async()=>{try{await api('/logout','POST',{})}catch(e){}setToken('');render()});return 'norender'},
+  showPw:()=>{document.getElementById('pwBox').innerHTML=`<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px"><input id="pwOld" type="password" placeholder="Current password"><input id="pwNew" type="password" placeholder="New password (6+ characters)" autocomplete="new-password"><button class="btn primary" data-act="savePw">Save new password</button><div class="pmeta">Every other signed-in phone gets signed out.</div></div>`;return 'norender'},
+  savePw:async()=>{try{const j=await api('/password','POST',{password:document.getElementById('pwOld').value,newPassword:document.getElementById('pwNew').value});setToken(j.token);toast('Password changed');render()}catch(e){toast(e.message)}return 'norender'},
+  copyLink:()=>{const u=location.href.split('#')[0];navigator.clipboard.writeText(u).then(()=>toast('Link copied')).catch(()=>toast(u));return 'norender'},
+  planOpen:()=>{planOpen=true;planPrev=null},
+  planClose:()=>{planOpen=false;planPrev=null},
+  planInn:v=>{S.innings=Number(v)},
+  planPitch:v=>{S.coachPitch=v==='coach'},
+  planNoRe:v=>{S.noRe=v==='y'},
+  planAuto:()=>{planSeed=0;planPrev=autoPlan(0);setTimeout(()=>{const p=document.querySelector('.planpg');if(p)p.scrollTop=0},0)},
+  planAgain:()=>{planSeed++;planPrev=autoPlan(planSeed)},
+  planBack:()=>{planPrev=null},
+  planUse:()=>{planPrev.forEach((row,i)=>{S.field[i+1]={...row}});planPrev=null;planOpen=false;S.fieldInning=S.inning;toast('Plan saved to every inning')},
+  ppAdd:()=>{const pool=planPool();const used=new Set(pplanOf().map(x=>x.id));const id=pool.find(x=>!used.has(x));if(!id)return toast('Everyone is in the plan');S.pplan=pplanOf().concat([{id,n:2}])},
+  ppN:(v,el)=>{const p=pplanOf();p[Number(v)].n=Math.max(1,Math.min(9,(p[Number(v)].n||1)+Number(el.dataset.d)));S.pplan=p},
+  ppDel:v=>{const p=pplanOf();p.splice(Number(v),1);S.pplan=p},
+  lockNone:()=>{S.locks={}},
+  pfType:v=>{PF.type=v;PF.err=''},
+  pfSit:v=>{PF.sit=v},
+  pfInn:v=>{const k=Number(v);PF.inns=PF.inns.includes(k)?PF.inns.filter(x=>x!==k):PF.inns.concat([k])},
+  rotAdd:()=>{const pos=PF.pos||positions()[positions().length-1];let nr;
+    if(PF.type==='swap'){if(!PF.a)return void(PF.err='Pick the starter.');if(!PF.inns.length)return void(PF.err='Pick the innings they come out.');if(PF.sub===PF.a)return void(PF.err='Pick a different player to go in.');
+      nr={kind:'swap',pos,a:PF.a,inns:PF.inns.slice().sort((a,b)=>a-b)};if(PF.sub)nr.sub=PF.sub}
+    else{const ids=[PF.a,PF.b,PF.c].filter(Boolean);if(!PF.a||!PF.b)return void(PF.err='Pick at least two players.');if(new Set(ids).size!==ids.length)return void(PF.err='Pick different players.');
+      nr={pos,a:PF.a,b:PF.b,sit:PF.sit==='sit'};if(PF.c)nr.c=PF.c}
+    if(planRots().some(x=>x.pos===pos||rotIds(x).some(id=>rotIds(nr).includes(id))))return void(PF.err='One of them, or that position, is already in a rotation.');
+    S.rots=planRots().concat([nr]);Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],err:''});toast('Rotation added')},
+  rotDel:v=>{const r=planRots();r.splice(Number(v),1);S.rots=r},
+  sitAdd:()=>{if(!PF.sitId)return toast('Pick a player');S.sitAll={...sitAllOf(),[PF.sitId]:{r:PF.sitR,note:PF.sitR==='other'?PF.sitNote:''}};PF.sitId='';PF.sitNote=''},
+  sitDel:v=>{const w={...sitAllOf()};delete w[v];S.sitAll=w},
   numStep:v=>{const el=document.getElementById('numIn');el.value=Math.max(0,(parseInt(el.value,10)||0)+Number(v));return 'norender'},
   sheetPick:(v,el)=>{const o=pick._opts[Number(el.dataset.i)],cb=sheetCb;closeSheet();cb&&cb(o.v)},
 };
@@ -478,18 +790,26 @@ const A={
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
   if(el.classList.contains('ov')&&e.target!==el)return;
+  if(!isAdmin&&!VIEW_OK.has(el.dataset.act)){if(el.dataset.act!=='setPos')toast('View only — the coach makes changes');return}
   const r=A[el.dataset.act]&&A[el.dataset.act](el.dataset.v,el);
+  if(r instanceof Promise)return;
   if(r!=='norender'){save();if(!document.querySelector('.ov'))render();else renderBoard()}
 });
 document.addEventListener('change',e=>{
-  const k=e.target.dataset.change;if(!k)return;
+  const t=e.target;
+  if(t.dataset.pf!==undefined||t.dataset.pfi!==undefined){PF[t.dataset.pf||t.dataset.pfi]=t.value;PF.err='';render();return}
+  if(!isAdmin)return;
+  if(t.dataset.pp!==undefined){const p=pplanOf();p[Number(t.dataset.pp)].id=t.value;S.pplan=p;save();render();return}
+  if(t.dataset.lock!==undefined){const L={...(S.locks||{})};if(t.value){for(const k2 of Object.keys(L))if(L[k2]===t.value)delete L[k2];L[t.dataset.lock]=t.value}else delete L[t.dataset.lock];S.locks=L;save();render();return}
+  if(t.dataset.pfc==='autoPush'){S.autoPush=t.checked;save();return}
+  const k=t.dataset.change;if(!k)return;
   if(k==='team')S.team=e.target.value.trim()||'My Team';
   if(k==='age')S.age=Number(e.target.value);
   if(k==='customLimit')S.customLimit=Math.max(0,parseInt(e.target.value,10)||0);
   if(k==='opp')S.opp=e.target.value.trim();
   save();render();
 });
-render();
+render();poll();checkAdmin();
 </script>
 </body>
 </html>
