@@ -393,7 +393,7 @@ function totalsHTML(plan){
   const rows=pool.map(id=>{let f=0,b=0,inf=0,of=0;for(let i=0;i<n;i++){const pos=Object.keys(plan[i]||{}).find(k=>plan[i][k]===id);if(!pos)b++;else{f++;INF.has(pos)?inf++:of++}}return {id,f,b,inf,of}}).sort((a,b)=>b.b-a.b);
   return `<table><tr><th>Player</th><th class="c">Field</th><th class="c">Bench</th><th class="c">IF</th><th class="c">OF</th><th class="c">Past</th></tr>${rows.map(r=>`<tr><td>${esc(nm(r.id))}</td><td class="c">${r.f}</td><td class="c">${r.b}</td><td class="c">${r.inf}</td><td class="c">${r.of}</td><td class="c">${season[r.id]!=null?Math.round(season[r.id]*100)+'%':'–'}</td></tr>`).join('')}</table>`;
 }
-let planOpen=false,planPrev=null,planSeed=0,PF={type:'turns',pos:'',a:'',b:'',c:'',sit:'sit',inns:[],sub:'',err:'',sitId:'',sitR:'practice',sitNote:''};
+let planInnSel=1,planOpen=false,planPrev=null,planSeed=0,PF={type:'turns',pos:'',a:'',b:'',c:'',sit:'sit',inns:[],sub:'',err:'',sitId:'',sitR:'practice',sitNote:''};
 function selHTML(key,val,opts,attr){return `<select ${attr||`data-pf="${key}"`}>${opts.map(([v,l])=>`<option value="${esc(v)}" ${String(v)===String(val)?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
 function vPlan(){
   const pool=planPool(),POS=positions(),opts=[['','—']].concat(pool.map(id=>[id,nm(id)]));
@@ -423,6 +423,17 @@ function vPlan(){
       <button class="btn sm" data-act="ppAdd" style="width:100%;margin-top:8px">+ Add pitcher</button>
       <div class="lbl" style="margin-top:12px">Pitcher taken out</div>${segBtns('planNoRe',S.noRe?'y':'n',[['y','Can’t pitch again'],['n','Can come back']])}
     </div>`:''}
+    ${(()=>{const N=S.innings||6;if(planInnSel>N)planInnSel=N;const inn=planInnSel,row=S.field[inn]||{},on=new Set(Object.values(row));
+      const benchIds=pool.filter(id=>!on.has(id)),filled=k=>Object.keys(S.field[k]||{}).length;
+      return `<div class="card" id="innEd"><div class="lbl">Inning by inning <span>Pick a player for each spot</span></div>
+      <div class="seg" style="margin-bottom:10px">${Array.from({length:N},(_,i)=>i+1).map(k=>`<button class="${k===inn?'on':''}" data-act="planInnSel" data-v="${k}">${k}${filled(k)>=POS.length?' ✓':filled(k)?' •':''}</button>`).join('')}</div>
+      <div class="posgrid2">${POS.map(pos=>`<label><b>${pos}</b>${selHTML('',row[pos]||'',opts,`data-dp="${pos}"`)}</label>`).join('')}</div>
+      <div class="pmeta" style="margin-top:8px"><b style="color:var(--text)">Sitting inning ${inn}:</b> ${benchIds.length?benchIds.map(id=>esc(nm(id))).join(', '):'nobody'}</div>
+      <div class="row" style="margin-top:10px;flex-wrap:wrap">
+        <button class="btn sm" style="flex:1" data-act="planCopyPrev" ${inn>1?'':'disabled'}>Same as inning ${Math.max(1,inn-1)}</button>
+        <button class="btn sm" style="flex:1" data-act="planNextInn" ${inn<N?'':'disabled'}>Next inning ›</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" style="flex:1" data-act="planCopyAll">Copy to all innings</button><button class="btn sm danger" style="flex:1" data-act="planClearInn">Clear inning</button></div>
+      <div class="pmeta" style="margin-top:8px">Picking someone already placed this inning swaps them. Or tap Fair auto-fill below to fill every inning for you.</div></div>`})()}
     <div class="card"><div class="lbl">Locked spots <span>Same player all game</span></div>
       <div class="pmeta" style="margin-bottom:8px">Lock a player to a position, or leave it on Rotate. Fair auto-fill only moves kids through the Rotate spots.</div>
       <div class="posgrid2">${POS.map(pos=>{
@@ -757,9 +768,14 @@ const A={
   showPw:()=>{document.getElementById('pwBox').innerHTML=`<div style="margin-top:10px;display:flex;flex-direction:column;gap:8px"><input id="pwOld" type="password" placeholder="Current password"><input id="pwNew" type="password" placeholder="New password (6+ characters)" autocomplete="new-password"><button class="btn primary" data-act="savePw">Save new password</button><div class="pmeta">Every other signed-in phone gets signed out.</div></div>`;return 'norender'},
   savePw:async()=>{try{const j=await api('/password','POST',{password:document.getElementById('pwOld').value,newPassword:document.getElementById('pwNew').value});setToken(j.token);toast('Password changed');render()}catch(e){toast(e.message)}return 'norender'},
   copyLink:()=>{const u=location.href.split('#')[0];navigator.clipboard.writeText(u).then(()=>toast('Link copied')).catch(()=>toast(u));return 'norender'},
-  planOpen:()=>{planOpen=true;planPrev=null},
+  planOpen:()=>{planOpen=true;planPrev=null;planInnSel=Math.min(S.fieldInning||1,S.innings||6)},
   planClose:()=>{planOpen=false;planPrev=null},
   planInn:v=>{S.innings=Number(v)},
+  planInnSel:v=>{planInnSel=Number(v)},
+  planNextInn:()=>{planInnSel=Math.min(S.innings||6,planInnSel+1)},
+  planCopyPrev:()=>{const i=planInnSel;if(i<2)return;S.field[i]={...(S.field[i-1]||{})};toast('Copied inning '+(i-1))},
+  planCopyAll:()=>confirmBox('Copy inning '+planInnSel+' to every inning?','Copy to all innings',()=>{const src={...(S.field[planInnSel]||{})};for(let k=1;k<=(S.innings||6);k++)S.field[k]={...src};toast('Copied to all innings')}),
+  planClearInn:()=>{delete S.field[planInnSel]},
   planPitch:v=>{S.coachPitch=v==='coach'},
   planNoRe:v=>{S.noRe=v==='y'},
   planAuto:()=>{planSeed=0;planPrev=autoPlan(0);setTimeout(()=>{const p=document.querySelector('.planpg');if(p)p.scrollTop=0},0)},
@@ -799,6 +815,9 @@ document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.pf!==undefined||t.dataset.pfi!==undefined){PF[t.dataset.pf||t.dataset.pfi]=t.value;PF.err='';render();return}
   if(!isAdmin)return;
+  if(t.dataset.dp!==undefined){const inn=planInnSel,f=S.field[inn]={...(S.field[inn]||{})},pos=t.dataset.dp,id=t.value,prev=f[pos];
+    if(id){const at=Object.keys(f).find(k=>f[k]===id);if(at&&at!==pos){if(prev)f[at]=prev;else delete f[at]}f[pos]=id}else delete f[pos];
+    save();render();return}
   if(t.dataset.pp!==undefined){const p=pplanOf();p[Number(t.dataset.pp)].id=t.value;S.pplan=p;save();render();return}
   if(t.dataset.lock!==undefined){const L={...(S.locks||{})};if(t.value){for(const k2 of Object.keys(L))if(L[k2]===t.value)delete L[k2];L[t.dataset.lock]=t.value}else delete L[t.dataset.lock];S.locks=L;save();render();return}
   if(t.dataset.pfc==='autoPush'){S.autoPush=t.checked;save();return}
