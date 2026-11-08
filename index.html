@@ -136,18 +136,30 @@ function defaults(){
   const roster=Array.from({length:10},(_,i)=>({id:uid(),name:'Player '+(i+1),num:String(i+1)}));
   return {team:'My Team',age:8,of:4,roster,order:roster.map(p=>p.id),batIdx:0,
     inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},
-    fieldInning:1,light:false,tab:'game'};
+    fieldInning:1,light:false,tab:'game',opp:'',customLimit:0,history:[],gameStart:Date.now()};
 }
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.roster)S=defaults();
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+S={...defaults(),...S,roster:S.roster};
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+const GAME=['batIdx','inning','half','outs','us','them','pitches','pitcher','pen','field','fieldInning','opp','gameStart'];
+const clone=o=>JSON.parse(JSON.stringify(o));
+function snapshot(){const g={};GAME.forEach(k=>g[k]=clone(S[k]));return g}
+function gameHasData(){return S.us||S.them||S.inning>1||Object.keys(S.pitches).length||Object.keys(S.field).length}
+function archive(){if(!gameHasData())return;const g=snapshot();
+  const i=S.history.findIndex(h=>h.gameStart===S.gameStart);
+  const rec={gameStart:S.gameStart,saved:Date.now(),game:g,names:Object.fromEntries(S.roster.map(p=>[p.id,p.name]))};
+  if(i>=0)S.history[i]=rec;else S.history.unshift(rec);S.history=S.history.slice(0,40)}
+let saveOk=true;
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));saveOk=true}catch(e){saveOk=false}}
 
 const P=id=>S.roster.find(p=>p.id===id);
 const nm=id=>{const p=P(id);return p?p.name:'—'};
 const tag=id=>{const p=P(id);return p?((p.num?'#'+esc(p.num)+' ':'')+esc(p.name)):'—'};
 const positions=()=>S.of===4?POS4:POS3;
-const limit=()=>S.age<=8?50:S.age<=10?75:S.age<=12?85:S.age<=16?95:105;
+const ageLimit=a=>a<=8?50:a<=10?75:a<=12?85:a<=16?95:105;
+const limit=()=>S.customLimit>0?S.customLimit:ageLimit(S.age);
 function rest(n){const t=S.age<=14?[20,35,50,65]:[30,45,60,75];return t.filter(x=>n>x).length}
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),1600)}
@@ -164,6 +176,14 @@ function pick(title,opts,cb){
   </div></div>`;
   pick._opts=opts;
 }
+function numBox(title,val,cb){numBox._cb=cb;
+  document.getElementById('sheet').innerHTML=`<div class="ov" data-act="closeSheet"><div class="sheet"><h3>${esc(title)}</h3>
+    <div class="row" style="margin-bottom:10px"><button class="ib" data-act="numStep" data-v="-1" style="width:72px;height:72px;font-size:28px">−</button>
+    <input id="numIn" type="number" inputmode="numeric" min="0" value="${val}" style="text-align:center;font-size:34px;font-weight:800;min-height:72px">
+    <button class="ib" data-act="numStep" data-v="1" style="width:72px;height:72px;font-size:28px">+</button></div>
+    <button class="opt" data-act="numSave" style="background:var(--good);color:#04130a;text-align:center">Save</button>
+    <button class="opt" data-act="closeSheet" style="text-align:center;color:var(--dim)">Cancel</button></div></div>`;
+  sheetCb=null;}
 function closeSheet(){document.getElementById('sheet').innerHTML='';sheetCb=null}
 function confirmBox(title,yes,cb){pick(title,[{html:yes,style:'background:var(--bad);color:#fff;text-align:center',v:true}],cb)}
 function playerOpts(extra){
@@ -241,14 +261,16 @@ function vGame(){
     const r=rest(c);
     pit=`<div class="pitch-wrap"><div>
       <button class="link" data-act="choosePitcher" style="font-size:20px;color:var(--text)">${tag(S.pitcher)} ▾</button>
-      <div class="count" style="color:${col}">${c}</div>
+      <button class="count" data-act="editCount" data-v="${S.pitcher}" style="color:${col};background:none;padding:0" aria-label="Edit pitch count">${c}<small style="font-size:16px;color:var(--dim);margin-left:6px">✎</small></button>
       <div class="meter"><i style="width:${pct}%;background:${col}"></i></div>
-      <div class="pmeta">Limit ${L} (age ${S.age}) · ${pct>=100?'<b style="color:var(--bad)">AT LIMIT</b>':(L-c)+' left'}<br>Rest if pulled now: <b style="color:var(--text)">${r} day${r===1?'':'s'}</b></div>
+      <div class="pmeta">Limit ${L} ${S.customLimit>0?'(custom)':'(age '+S.age+')'} · ${pct>=100?'<b style="color:var(--bad)">AT LIMIT</b>':(L-c)+' left'}<br>Rest if pulled now: <b style="color:var(--text)">${r} day${r===1?'':'s'}</b></div>
     </div><div>
       <button class="plus" data-act="pitch" data-v="1">+1</button>
       <button class="minus" data-act="pitch" data-v="-1">−1 undo</button>
     </div></div>`;
   }
+  const used=Object.entries(S.pitches).filter(([id,n])=>P(id)&&(n>0||id===S.pitcher));
+  if(used.length)pit+=`<div class="lbl" style="margin-top:14px">Pitch counts this game <span>Tap to change</span></div><div class="mini bench">${used.map(([id,n])=>`<button data-act="editCount" data-v="${id}">${esc(nm(id))}: <b style="color:${n>=limit()?'var(--bad)':'var(--text)'}">${n}</b></button>`).join('')}</div>`;
   // Bullpen
   const pen=S.pen.length?`<div class="chips">${S.pen.map(w=>`<div class="chip"><div class="nm">${tag(w.id)}</div><div class="tm" data-start="${w.start}">0:00</div><button class="go" data-act="penIn" data-v="${w.id}">Put in</button><button data-act="penOut" data-v="${w.id}" aria-label="Stop warming">✕</button></div>`).join('')}</div>`:`<div class="empty">Nobody warming up.</div>`;
   // Field now
@@ -313,7 +335,9 @@ function vSetup(){
     <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div>
   </div>
   <div class="card"><div class="lbl">Pitch count rules (Pitch Smart)</div>
-    <select data-change="age">${ages.map(a=>`<option value="${a}" ${a===S.age?'selected':''}>Age ${a} — limit ${a<=8?50:a<=10?75:a<=12?85:a<=16?95:105}</option>`).join('')}</select>
+    <select data-change="age">${ages.map(a=>`<option value="${a}" ${a===S.age?'selected':''}>Age ${a} — limit ${ageLimit(a)}</option>`).join('')}</select>
+    <div class="lbl" style="margin-top:12px">Custom pitch limit <span>Leave blank for Pitch Smart</span></div>
+    <input type="number" inputmode="numeric" min="1" max="200" data-change="customLimit" value="${S.customLimit||''}" placeholder="e.g. 60 for your league">
   </div>
   <div class="card"><div class="lbl">Outfielders</div>
     <div class="seg"><button class="${S.of===3?'on':''}" data-act="of" data-v="3">3 (LF CF RF)</button><button class="${S.of===4?'on':''}" data-act="of" data-v="4">4 (LF LC RC RF)</button></div>
@@ -324,9 +348,19 @@ function vSetup(){
     ${S.roster.map(p=>`<div class="li"><div class="nm">${tag(p.id)}</div><button class="ib" data-act="rename" data-v="${p.id}" aria-label="Edit">✎</button><button class="ib" data-act="delPlayer" data-v="${p.id}" style="color:var(--bad)" aria-label="Delete">✕</button></div>`).join('')}
     <div id="editBox"></div>
   </div>
-  <div class="card"><div class="lbl">Game</div>
+  <div class="card"><div class="lbl">This game <span style="color:${saveOk?'var(--good)':'var(--bad)'}">${saveOk?'✓ Auto-saved':'⚠ Not saving'}</span></div>
+    <input data-change="opp" value="${esc(S.opp)}" placeholder="Opponent (optional)" style="margin-bottom:10px">
+    <button class="btn" data-act="saveGame" style="width:100%;margin-bottom:10px">💾 Save game to history</button>
     <button class="btn danger" data-act="newGame" style="width:100%">Start new game</button>
-    <div class="pmeta" style="margin-top:8px">Clears score, pitch counts, bullpen and positions. Keeps roster and batting order.</div>
+    <div class="pmeta" style="margin-top:8px">Everything saves on this phone as you tap. Starting a new game files the current one under Saved games first.</div>
+  </div>
+  <div class="card"><div class="lbl">Saved games (${S.history.length})</div>
+    ${S.history.length?S.history.map((h,i)=>{const g=h.game,d=new Date(h.gameStart);return `<div class="li"><div class="nm" style="white-space:normal">${d.toLocaleDateString(undefined,{month:'short',day:'numeric'})} ${g.opp?'vs '+esc(g.opp):''}<br><small style="color:var(--dim);font-weight:600">Us ${g.us} – ${g.them} Them · ${g.half==='top'?'Top':'Bot'} ${g.inning}</small></div><button class="btn sm" data-act="loadGame" data-v="${i}">Open</button><button class="ib" data-act="delGame" data-v="${i}" style="color:var(--bad)" aria-label="Delete saved game">✕</button></div>`}).join(''):'<div class="empty">No saved games yet.</div>'}
+  </div>
+  <div class="card"><div class="lbl">Backup</div>
+    <div class="pmeta" style="margin-bottom:10px">Copy a backup code to move everything to another phone, or keep it in Notes in case you clear Safari.</div>
+    <div class="row"><button class="btn sm" style="flex:1" data-act="copyBackup">Copy backup</button><button class="btn sm" style="flex:1" data-act="showRestore">Restore</button></div>
+    <div id="restoreBox"></div>
   </div>`;
 }
 
@@ -382,8 +416,19 @@ const A={
     <div class="field2"><input id="eNum" value="${esc(p.num)}" inputmode="numeric"><input id="eName" value="${esc(p.name)}"></div>
     <button class="btn primary" style="width:100%" data-act="saveRename" data-v="${v}">Save</button></div>`;document.getElementById('eName').focus();return 'norender'},
   saveRename:v=>{const p=P(v);p.name=document.getElementById('eName').value.trim()||p.name;p.num=document.getElementById('eNum').value.trim()},
-  newGame:()=>confirmBox('Start a new game?','Clear game & start new',()=>{Object.assign(S,{batIdx:0,inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},fieldInning:1,tab:'game'});toast('New game ready')}),
+  editCount:id=>{numBox('Pitch count — '+nm(id),S.pitches[id]||0,n=>{S.pitches[id]=n;toast(nm(id)+': '+n+' pitches')});return 'norender'},
+  numSave:()=>{const v=parseInt(document.getElementById('numIn').value,10);const cb=numBox._cb;closeSheet();if(!isNaN(v)&&v>=0&&cb)cb(Math.min(250,v))},
+  saveGame:()=>{if(!gameHasData())return toast('Nothing to save yet');archive();toast('Game saved')},
+  loadGame:v=>confirmBox('Open this saved game? Your current game is saved first.','Open game',()=>{archive();const h=S.history[Number(v)];
+    Object.assign(S,clone(h.game));S.tab='game';toast('Game opened')}),
+  delGame:v=>confirmBox('Delete this saved game?','Delete',()=>{S.history.splice(Number(v),1)}),
+  copyBackup:()=>{const code=btoa(unescape(encodeURIComponent(JSON.stringify(S))));
+    navigator.clipboard.writeText(code).then(()=>toast('Backup copied — paste it in Notes')).catch(()=>{document.getElementById('restoreBox').innerHTML=`<textarea readonly style="width:100%;height:110px;margin-top:10px;background:var(--card2);color:var(--text);border-radius:12px;border:1px solid var(--line);padding:10px;user-select:text;-webkit-user-select:text">${code}</textarea><div class="pmeta">Press and hold to copy.</div>`});return 'norender'},
+  showRestore:()=>{document.getElementById('restoreBox').innerHTML=`<textarea id="restoreIn" placeholder="Paste backup code" style="width:100%;height:110px;margin-top:10px;background:var(--card2);color:var(--text);border-radius:12px;border:1px solid var(--line);padding:10px;user-select:text;-webkit-user-select:text"></textarea><button class="btn primary" style="width:100%;margin-top:8px" data-act="doRestore">Restore backup</button>`;return 'norender'},
+  doRestore:()=>{try{const d=JSON.parse(decodeURIComponent(escape(atob(document.getElementById('restoreIn').value.trim()))));if(!d.roster)throw 0;S={...defaults(),...d};toast('Backup restored')}catch(e){toast('That code didn’t work');return 'norender'}},
+  newGame:()=>confirmBox('Start a new game?','Clear game & start new',()=>{archive();Object.assign(S,{gameStart:Date.now(),opp:'',batIdx:0,inning:1,half:'top',outs:0,us:0,them:0,pitches:{},pitcher:null,pen:[],field:{},fieldInning:1,tab:'game'});toast('New game ready')}),
   closeSheet:()=>{closeSheet();return 'norender'},
+  numStep:v=>{const el=document.getElementById('numIn');el.value=Math.max(0,(parseInt(el.value,10)||0)+Number(v));return 'norender'},
   sheetPick:(v,el)=>{const o=pick._opts[Number(el.dataset.i)],cb=sheetCb;closeSheet();cb&&cb(o.v)},
 };
 
@@ -397,6 +442,8 @@ document.addEventListener('change',e=>{
   const k=e.target.dataset.change;if(!k)return;
   if(k==='team')S.team=e.target.value.trim()||'My Team';
   if(k==='age')S.age=Number(e.target.value);
+  if(k==='customLimit')S.customLimit=Math.max(0,parseInt(e.target.value,10)||0);
+  if(k==='opp')S.opp=e.target.value.trim();
   save();render();
 });
 render();
