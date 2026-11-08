@@ -10,6 +10,6 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }],
   "vars": {
-    "ALLOWED_ORIGIN": "https://keubanks16.github.io"
+    "ALLOWED_ORIGIN": "https://keubanks16.github.io,https://gsbaseballwalkout.kollinmeubanks.workers.dev"
   }
 }
