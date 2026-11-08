@@ -290,6 +290,7 @@ async function sendPush(msg,inning){
 function showPush(p){
   S.seenPush=p.id;localSave();
   if(Date.now()-p.id>20*60e3)return;
+  if(S.quiet){if(p.inning){S.fieldInning=p.inning;if(!document.querySelector('.ov')&&!isTyping())render()}toast('Field updated'+(p.inning?' — inning '+p.inning:''));return}
   try{navigator.vibrate&&navigator.vibrate([200,100,200])}catch(e){}
   document.getElementById('pushov').innerHTML=`<div class="push"><div class="push-in">
     <div style="font-size:64px">📣</div>
@@ -300,7 +301,7 @@ function showPush(p){
 }
 async function checkAdmin(){try{hasAdmin=(await api('/admin')).hasAdmin}catch(e){hasAdmin=null}if(S.tab==='setup'&&!isTyping())render()}
 // Viewers can look around but not change anything.
-const VIEW_OK=new Set(['pdfExport','pdfShare','tab','goField','fInn','fsOpen','fsClose','closeSheet','light','pushGo','pushClose','adminLogin','adminSetup','showLogin']);
+const VIEW_OK=new Set(['quiet','pdfExport','pdfShare','tab','goField','fInn','fsOpen','fsClose','closeSheet','light','pushGo','pushClose','adminLogin','adminSetup','showLogin']);
 
 /* ---------- Substitution plan (from The Sports Hub) ---------- */
 const INF=new Set(['P','C','1B','2B','3B','SS']);
@@ -741,12 +742,18 @@ function adminCard(){
 function vSetup(){
   const ages=[7,8,9,10,11,12,13,14,15,16,17,18];
   if(!isAdmin)return adminCard()+`<div class="card"><div class="lbl">Display</div>
-    <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div></div>`;
+    <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div>
+    <div class="lbl" style="margin-top:14px">Field update alerts <span>This device only</span></div>
+    <div class="seg"><button class="${!S.quiet?'on':''}" data-act="quiet" data-v="0">📣 Pop-up</button><button class="${S.quiet?'on':''}" data-act="quiet" data-v="1">🔕 Silent</button></div>
+    <div class="pmeta" style="margin-top:6px">${S.quiet?'Silent: no pop-up or buzz. The lineup and field still update live, and a small note shows at the bottom.':'Pop-up: a big Field Update button shows when the coach sends an update.'}</div></div>`;
   return adminCard()+`<div class="card"><div class="lbl">Team</div>
     <input id="team" value="${esc(S.team)}" data-change="team" placeholder="Team name">
   </div>
   <div class="card"><div class="lbl">Display</div>
     <div class="seg"><button class="${!S.light?'on':''}" data-act="light" data-v="0">🌙 Dark</button><button class="${S.light?'on':''}" data-act="light" data-v="1">☀️ Bright sun</button></div>
+    <div class="lbl" style="margin-top:14px">Field update alerts <span>This device only</span></div>
+    <div class="seg"><button class="${!S.quiet?'on':''}" data-act="quiet" data-v="0">📣 Pop-up</button><button class="${S.quiet?'on':''}" data-act="quiet" data-v="1">🔕 Silent</button></div>
+    <div class="pmeta" style="margin-top:6px">${S.quiet?'Silent: no pop-up or buzz. The lineup and field still update live, and a small note shows at the bottom.':'Pop-up: a big Field Update button shows when the coach sends an update.'}</div>
   </div>
   <div class="card"><div class="lbl">Pitch count rules (Pitch Smart)</div>
     <select data-change="age">${ages.map(a=>`<option value="${a}" ${a===S.age?'selected':''}>Age ${a} — limit ${ageLimit(a)}</option>`).join('')}</select>
@@ -822,6 +829,7 @@ const A={
   copyInn:()=>{const i=S.fieldInning;if(i<2||!S.field[i-1])return toast('Nothing to copy');S.field[i]={...S.field[i-1]};toast('Copied inning '+(i-1))},
   clearInn:()=>{delete S.field[S.fieldInning]},
   light:v=>{S.light=v==='1'},
+  quiet:v=>{S.quiet=v==='1';toast(S.quiet?'Field update pop-ups off on this device':'Field update pop-ups on')},
   of:v=>{S.of=Number(v);const ok=positions();Object.values(S.field).forEach(f=>Object.keys(f).forEach(k=>{if(!ok.includes(k))delete f[k]}))},
   addPlayer:()=>{const name=document.getElementById('newName').value.trim(),num=document.getElementById('newNum').value.trim();
     if(!name)return toast('Enter a name');const id=uid();S.roster.push({id,name,num});S.order.push(id);toast(name+' added')},
