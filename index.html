@@ -371,6 +371,25 @@ function autoPlan(seed){
   }
   return plan;
 }
+// Put rotation and locked-spot kids into the innings right away, keeping the rest of each inning.
+function rotToBy(r){const by={};for(let k=1;k<=(S.innings||6);k++){const on=rotTurn(r,k-1).on;if(on)by[k]=on}return by}
+function prefillBy(){const ex=planRots().find(r=>r.pos===(PF.pos||positions()[positions().length-1]));PF.by=ex?rotToBy(ex):{};if(ex)PF.sit=ex.sit?'sit':'play'}
+function applyRules(){
+  const N=S.innings||6,POS=positions(),pool=planPool(),why=sitAllOf(),rots=planRots().filter(r=>POS.includes(r.pos)),locks=lockOf();
+  const fieldN={};pool.forEach(id=>fieldN[id]=0);
+  for(let i=0;i<N;i++){
+    const f=S.field[i+1]={...(S.field[i+1]||{})};
+    const posOf=id=>Object.keys(f).find(k=>f[k]===id);
+    const mustSit=new Set(Object.keys(why));
+    const place=(pos,id)=>{const prev=f[pos],at=posOf(id);if(prev===id)return;f[pos]=id;if(at&&at!==pos){if(prev)f[at]=prev;else delete f[at]}};
+    for(const r of rots){const {on,off}=rotTurn(r,i);if(on)place(r.pos,on);if(r.sit)off.forEach(o=>mustSit.add(o))}
+    for(const [pos,id] of Object.entries(locks))if(!(S.coachPitch===false&&pos==='P'&&pplanOf().length))place(pos,id);
+    const keep=new Set(rots.map(r=>rotTurn(r,i).on).filter(Boolean).concat(Object.values(locks)));
+    for(const id of mustSit){if(keep.has(id))continue;const at=posOf(id);if(!at)continue;delete f[at];
+      const sub=pool.filter(x=>!posOf(x)&&!mustSit.has(x)).sort((a,b)=>fieldN[a]-fieldN[b])[0];if(sub)f[at]=sub}
+    Object.values(f).forEach(id=>{if(fieldN[id]!=null)fieldN[id]++});
+  }
+}
 function curPlan(){return Array.from({length:S.innings||6},(_,i)=>S.field[i+1]||{})}
 function planFlags(plan){
   const pool=planPool(),n=Math.min(plan.length,S.innings||6);if(!n||!plan.some(r=>Object.keys(r).length))return [];
@@ -430,7 +449,7 @@ function vPlan(){
       const benchIds=pool.filter(id=>!on.has(id)),filled=k=>Object.keys(S.field[k]||{}).length;
       return `<div class="card" id="innEd"><div class="lbl">Inning by inning <span>Pick a player for each spot</span></div>
       <div class="seg" style="margin-bottom:10px">${Array.from({length:N},(_,i)=>i+1).map(k=>`<button class="${k===inn?'on':''}" data-act="planInnSel" data-v="${k}">${k}${filled(k)>=POS.length?' ✓':filled(k)?' •':''}</button>`).join('')}</div>
-      <div class="posgrid2">${POS.map(pos=>`<label><b>${pos}</b>${selHTML('',row[pos]||'',opts,`data-dp="${pos}"`)}</label>`).join('')}</div>
+      <div class="posgrid2">${POS.map(pos=>{const tagx=planRots().some(r=>r.pos===pos)?' · rotation':lockOf()[pos]?' · locked':'';return `<label><b>${pos}<span style="color:var(--dim);font-weight:600">${tagx}</span></b>${selHTML('',row[pos]||'',opts,`data-dp="${pos}"`)}</label>`}).join('')}</div>
       <div class="pmeta" style="margin-top:8px"><b style="color:var(--text)">Sitting inning ${inn}:</b> ${benchIds.length?benchIds.map(id=>esc(nm(id))).join(', '):'nobody'}</div>
       <div class="row" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn sm" style="flex:1" data-act="planCopyPrev" ${inn>1?'':'disabled'}>Same as inning ${Math.max(1,inn-1)}</button>
@@ -452,7 +471,7 @@ function vPlan(){
       <div class="pf">
         <label><span class="pmeta">Position</span>${selHTML('pos',PF.pos||POS[POS.length-1],POS.map(p=>[p,p]))}</label>
         ${PF.type==='sched'?`
-        <div class="pmeta">Who plays this spot each inning. Leave an inning on Auto to let Fair auto-fill pick.</div>
+        <div class="pmeta">Who plays this spot each inning. Leave an inning on Auto to let Fair auto-fill pick. If this spot already has a rotation, its innings show here and saving updates it.</div>
         <div class="posgrid2">${Array.from({length:S.innings||6},(_,i)=>i+1).map(k=>`<label><b>Inning ${k}</b>${selHTML('',(PF.by||{})[k]||'',[['','Auto']].concat(opts.slice(1)),`data-pfby="${k}"`)}</label>`).join('')}</div>
         <label><span class="pmeta">Kids in this rotation, when not at the spot</span>${segBtns('pfSit',PF.sit,[['sit','Sit'],['play','Play elsewhere']])}</label>`:PF.type==='turns'?`
         <label><span class="pmeta">Player 1 · innings ${PF.c?'1, 4, 7':'1, 3, 5'}</span>${selHTML('a',PF.a,opts)}</label>
@@ -463,7 +482,7 @@ function vPlan(){
         <div><span class="pmeta">Out in innings</span><div class="seg">${innChips}</div></div>
         <label><span class="pmeta">Goes in</span>${selHTML('sub',PF.sub,[['','Whoever needs time']].concat(opts.slice(1)))}</label>`}
         ${PF.err?`<div class="pmeta" style="color:var(--bad)">${esc(PF.err)}</div>`:''}
-        <button class="btn sm" data-act="rotAdd" style="width:100%">+ Add rotation</button>
+        <button class="btn sm" data-act="rotAdd" style="width:100%">${PF.type==='sched'&&planRots().some(r=>r.pos===(PF.pos||positions()[positions().length-1]))?'Save rotation':'+ Add rotation'}</button>
       </div>
     </div>
     <div class="card"><div class="lbl">Sitting all game</div>
@@ -776,7 +795,7 @@ const A={
   copyLink:()=>{const u=location.href.split('#')[0];navigator.clipboard.writeText(u).then(()=>toast('Link copied')).catch(()=>toast(u));return 'norender'},
   planOpen:()=>{planOpen=true;planPrev=null;planInnSel=Math.min(S.fieldInning||1,S.innings||6)},
   planClose:()=>{planOpen=false;planPrev=null},
-  planInn:v=>{S.innings=Number(v)},
+  planInn:v=>{S.innings=Number(v);if(planRots().length||Object.keys(lockOf()).length)applyRules()},
   planInnSel:v=>{planInnSel=Number(v)},
   planNextInn:()=>{planInnSel=Math.min(S.innings||6,planInnSel+1)},
   planCopyPrev:()=>{const i=planInnSel;if(i<2)return;S.field[i]={...(S.field[i-1]||{})};toast('Copied inning '+(i-1))},
@@ -792,21 +811,26 @@ const A={
   ppN:(v,el)=>{const p=pplanOf();p[Number(v)].n=Math.max(1,Math.min(9,(p[Number(v)].n||1)+Number(el.dataset.d)));S.pplan=p},
   ppDel:v=>{const p=pplanOf();p.splice(Number(v),1);S.pplan=p},
   lockNone:()=>{S.locks={}},
-  pfType:v=>{PF.type=v;PF.err=''},
+  pfType:v=>{PF.type=v;PF.err='';if(v==='sched')prefillBy()},
   pfSit:v=>{PF.sit=v},
   pfInn:v=>{const k=Number(v);PF.inns=PF.inns.includes(k)?PF.inns.filter(x=>x!==k):PF.inns.concat([k])},
   rotAdd:()=>{const pos=PF.pos||positions()[positions().length-1];let nr;
     if(PF.type==='sched'){const by={};for(const [k,v] of Object.entries(PF.by||{}))if(v&&Number(k)<=(S.innings||6))by[k]=v;
       if(!Object.keys(by).length)return void(PF.err='Pick a player for at least one inning.');
-      nr={kind:'sched',pos,by,sit:PF.sit==='sit'}}
+      nr={kind:'sched',pos,by,sit:PF.sit==='sit'};
+      const others=planRots().filter(x=>x.pos!==pos);
+      if(others.some(x=>rotIds(x).some(id=>rotIds(nr).includes(id))))return void(PF.err='One of those kids is already in a rotation at another spot.');
+      const had=planRots().some(x=>x.pos===pos);
+      S.rots=others.concat([nr]);applyRules();Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],by:{},err:''});
+      toast(had?pos+' rotation updated in every inning':'Rotation added to every inning');return}
     else if(PF.type==='swap'){if(!PF.a)return void(PF.err='Pick the starter.');if(!PF.inns.length)return void(PF.err='Pick the innings they come out.');if(PF.sub===PF.a)return void(PF.err='Pick a different player to go in.');
       nr={kind:'swap',pos,a:PF.a,inns:PF.inns.slice().sort((a,b)=>a-b)};if(PF.sub)nr.sub=PF.sub}
     else{const ids=[PF.a,PF.b,PF.c].filter(Boolean);if(!PF.a||!PF.b)return void(PF.err='Pick at least two players.');if(new Set(ids).size!==ids.length)return void(PF.err='Pick different players.');
       nr={pos,a:PF.a,b:PF.b,sit:PF.sit==='sit'};if(PF.c)nr.c=PF.c}
     if(planRots().some(x=>x.pos===pos||rotIds(x).some(id=>rotIds(nr).includes(id))))return void(PF.err='One of them, or that position, is already in a rotation. Remove it with ✕ first, or use By inning to set every inning of that spot.');
-    S.rots=planRots().concat([nr]);Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],by:{},err:''});toast('Rotation added')},
+    S.rots=planRots().concat([nr]);applyRules();Object.assign(PF,{a:'',b:'',c:'',sub:'',inns:[],by:{},err:''});toast('Rotation added to every inning')},
   rotDel:v=>{const r=planRots();r.splice(Number(v),1);S.rots=r},
-  sitAdd:()=>{if(!PF.sitId)return toast('Pick a player');S.sitAll={...sitAllOf(),[PF.sitId]:{r:PF.sitR,note:PF.sitR==='other'?PF.sitNote:''}};PF.sitId='';PF.sitNote=''},
+  sitAdd:()=>{if(!PF.sitId)return toast('Pick a player');S.sitAll={...sitAllOf(),[PF.sitId]:{r:PF.sitR,note:PF.sitR==='other'?PF.sitNote:''}};applyRules();PF.sitId='';PF.sitNote=''},
   sitDel:v=>{const w={...sitAllOf()};delete w[v];S.sitAll=w},
   numStep:v=>{const el=document.getElementById('numIn');el.value=Math.max(0,(parseInt(el.value,10)||0)+Number(v));return 'norender'},
   sheetPick:(v,el)=>{const o=pick._opts[Number(el.dataset.i)],cb=sheetCb;closeSheet();cb&&cb(o.v)},
@@ -823,13 +847,13 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.pfby!==undefined){PF.by={...(PF.by||{}),[t.dataset.pfby]:t.value};PF.err='';render();return}
-  if(t.dataset.pf!==undefined||t.dataset.pfi!==undefined){PF[t.dataset.pf||t.dataset.pfi]=t.value;PF.err='';render();return}
+  if(t.dataset.pf!==undefined||t.dataset.pfi!==undefined){PF[t.dataset.pf||t.dataset.pfi]=t.value;PF.err='';if(t.dataset.pf==='pos'&&PF.type==='sched')prefillBy();render();return}
   if(!isAdmin)return;
   if(t.dataset.dp!==undefined){const inn=planInnSel,f=S.field[inn]={...(S.field[inn]||{})},pos=t.dataset.dp,id=t.value,prev=f[pos];
     if(id){const at=Object.keys(f).find(k=>f[k]===id);if(at&&at!==pos){if(prev)f[at]=prev;else delete f[at]}f[pos]=id}else delete f[pos];
     save();render();return}
   if(t.dataset.pp!==undefined){const p=pplanOf();p[Number(t.dataset.pp)].id=t.value;S.pplan=p;save();render();return}
-  if(t.dataset.lock!==undefined){const L={...(S.locks||{})};if(t.value){for(const k2 of Object.keys(L))if(L[k2]===t.value)delete L[k2];L[t.dataset.lock]=t.value}else delete L[t.dataset.lock];S.locks=L;save();render();return}
+  if(t.dataset.lock!==undefined){const L={...(S.locks||{})};if(t.value){for(const k2 of Object.keys(L))if(L[k2]===t.value)delete L[k2];L[t.dataset.lock]=t.value}else delete L[t.dataset.lock];S.locks=L;if(t.value){applyRules();toast('Locked in every inning')}save();render();return}
   if(t.dataset.pfc==='autoPush'){S.autoPush=t.checked;save();return}
   const k=t.dataset.change;if(!k)return;
   if(k==='team')S.team=e.target.value.trim()||'My Team';
