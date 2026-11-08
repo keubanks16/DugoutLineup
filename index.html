@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dugout">
+<meta name="theme-color" content="#0b0f14">
 <title>Dugout Clipboard</title>
 <style>
 :root{
@@ -75,6 +80,24 @@ main{padding:12px}
 .fp.open span{color:#c9d2dc;font-weight:600}
 .diamond.small .fp{width:21%;padding:2px 3px 3px;border-width:1.5px}
 .diamond.small .fp small{font-size:9px}.diamond.small .fp span{font-size:11px}
+.fs{position:fixed;inset:0;z-index:8;background:var(--bg);display:flex;flex-direction:column;gap:10px;padding:calc(10px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
+.fs-head{display:flex;align-items:center;gap:8px}
+.fs-head .t{flex:1;text-align:center;font-size:22px;font-weight:800}
+.fs-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;container-type:size}
+.fs .diamond{aspect-ratio:auto;width:min(100cqw,100cqh*1.3);height:min(100cqh,100cqw*1.55);container-type:size}
+.fs .fp{width:min(22cqw,150px);max-width:none;padding:min(1.2cqh,6px) 4px}
+.fs .fp span{font-size:clamp(12px,min(4.2cqw,3.6cqh),20px)}.fs .fp small{font-size:clamp(10px,min(3cqw,2.6cqh),14px)}
+.fs-side{display:flex;flex-direction:column;gap:8px;min-height:0}
+.fs .bench{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+@media (orientation:landscape){
+  .fs{display:grid;grid-template-columns:1fr minmax(150px,26%);grid-template-rows:auto 1fr}
+  .fs-head{grid-column:1/-1}
+  .fs .diamond{width:min(100cqw,100cqh*1.7)}
+  .fs .bench{flex-direction:column;flex-wrap:nowrap;overflow-y:auto;overflow-x:hidden}
+  .fs .bench button{text-align:left}
+  .fs-side .lbl span{display:none}
+}
+.fs .bench button{flex:0 0 auto}
 .bench button{background:var(--card2);border-radius:10px;padding:8px 10px;font-size:15px;font-weight:600}
 .pos{background:var(--card2);border-radius:14px;min-height:72px;padding:8px;text-align:left;display:flex;flex-direction:column;justify-content:center}
 .pos small{font-size:13px;color:var(--accent);font-weight:800}
@@ -195,7 +218,8 @@ function render(){
   document.body.classList.toggle('light',!!S.light);
   renderBoard();
   const m=document.getElementById('main');
-  m.innerHTML={game:vGame,lineup:vLineup,field:vField,setup:vSetup}[S.tab]();
+  m.innerHTML={game:vGame,lineup:vLineup,field:vField,setup:vSetup}[S.tab]()+(S.full?vFull():'');
+  document.body.style.overflow=S.full?'hidden':'';
   const tabs=[['game','⚾','Game'],['lineup','📋','Lineup'],['field','🧢','Field'],['setup','⚙️','Setup']];
   document.getElementById('nav').innerHTML=tabs.map(t=>`<button class="${S.tab===t[0]?'on':''}" data-act="tab" data-v="${t[0]}"><i>${t[1]}</i>${t[2]}</button>`).join('');
   tick();
@@ -279,7 +303,23 @@ function vGame(){
   <div class="card"><div class="lbl">Now batting <span>${n?((((S.batIdx%n)+n)%n)+1)+' of '+n:''}</span></div>${bat}</div>
   <div class="card"><div class="lbl">Pitcher</div>${pit}</div>
   <div class="card"><div class="lbl">Warming up <button class="link" data-act="penAdd">+ Add</button></div>${pen}</div>
-  <div class="card"><div class="lbl">Defense · inning ${S.inning} <button class="link" data-act="goField">Edit</button></div>${fieldView(S.inning,false,true)}</div>`;
+  <div class="card"><div class="lbl">Defense · inning ${S.inning} <span><button class="link" data-act="fsOpen" data-v="now" style="margin-right:14px">⛶ Full screen</button><button class="link" data-act="goField">Edit</button></span></div>${fieldView(S.inning,false,true)}</div>`;
+}
+
+function vFull(){
+  const inn=S.fieldInning,f=S.field[inn]||{},used=Object.values(f);
+  const bench=S.roster.filter(p=>!used.includes(p.id));
+  return `<div class="fs">
+    <div class="fs-head">
+      <button class="ib" data-act="fInn" data-v="-1" aria-label="Previous inning">‹</button>
+      <div class="t">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
+      <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
+      <button class="ib" data-act="fsClose" aria-label="Exit full screen" style="margin-left:6px">✕</button>
+    </div>
+    <div class="fs-body">${fieldView(inn,true)}</div>
+    <div class="fs-side"><div class="lbl" style="margin:0">Bench (${bench.length}) <span>Tap a name to put them in</span></div>
+    <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div></div>
+  </div>`;
 }
 
 function vLineup(){
@@ -318,7 +358,7 @@ function vField(){
       <div style="flex:1;text-align:center;font-size:22px;font-weight:800">Inning ${inn}${inn===S.inning?' <small style="color:var(--accent);font-size:13px">NOW</small>':''}</div>
       <button class="ib" data-act="fInn" data-v="1" aria-label="Next inning">›</button>
     </div>
-    ${fieldView(inn,true)}
+    <button class="btn sm" data-act="fsOpen" style="width:100%;margin-bottom:10px">⛶ Full screen</button>${fieldView(inn,true)}
     <div class="lbl" style="margin-top:14px">Bench (${bench.length}) <span>Tap a name to put them in</span></div>
     <div class="mini bench">${bench.map(p=>`<button data-act="benchPut" data-v="${p.id}">${tag(p.id)}</button>`).join('')||'<span>Nobody</span>'}</div>
     <div class="row" style="margin-top:12px"><button class="btn sm" style="flex:1" data-act="copyInn">Copy inning ${inn-1>0?inn-1:''}</button><button class="btn sm danger" style="flex:1" data-act="clearInn">Clear</button></div>
@@ -401,6 +441,9 @@ const A={
       if(id){const at=Object.keys(f).find(k=>f[k]===id);if(at&&at!==ps){if(prev)f[at]=prev;else delete f[at]}f[ps]=id}else delete f[ps]})},
   benchPut:id=>{const inn=S.fieldInning,f=S.field[inn]||{};pick('Put '+nm(id)+' at…',positions().map(ps=>({html:ps+(f[ps]?`<small>replaces ${esc(nm(f[ps]))}</small>`:''),v:ps})),
     ps=>{(S.field[inn]=S.field[inn]||{})[ps]=id})},
+  fsOpen:v=>{if(v==='now')S.fieldInning=S.inning;S.full=true;
+    try{const d=document.documentElement;(d.requestFullscreen||d.webkitRequestFullscreen)&&(d.requestFullscreen||d.webkitRequestFullscreen).call(d).catch?.(()=>{})}catch(e){}},
+  fsClose:()=>{S.full=false;try{if(document.fullscreenElement)document.exitFullscreen()}catch(e){}},
   copyInn:()=>{const i=S.fieldInning;if(i<2||!S.field[i-1])return toast('Nothing to copy');S.field[i]={...S.field[i-1]};toast('Copied inning '+(i-1))},
   clearInn:()=>{delete S.field[S.fieldInning]},
   light:v=>{S.light=v==='1'},
